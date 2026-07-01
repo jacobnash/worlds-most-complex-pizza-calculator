@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import './BreadCalculator.css';
+import { Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 
 // Baker's percentages: flour is always 100%. Every other ingredient is
 // expressed as a percentage of the total flour weight. Hydration is just the
@@ -8,7 +9,7 @@ import './BreadCalculator.css';
 //
 // Each preset is a starting point. All values stay editable so you can tweak a
 // recipe (or dial in your own) after picking a preset.
-const PRESETS = {
+export const PRESETS = {
     'Neapolitan Pizza': { hydration: 60, salt: 2.8, leavening: 0.2, unitWeight: 250, units: 4, unitLabel: 'dough balls' },
     'New York Pizza': { hydration: 62, salt: 2.0, leavening: 0.5, unitWeight: 280, units: 4, unitLabel: 'dough balls' },
     'Ciabatta': { hydration: 80, salt: 2.0, leavening: 0.6, unitWeight: 400, units: 2, unitLabel: 'loaves' },
@@ -24,7 +25,7 @@ const round = (value, decimals = 0) => {
 
 // Given a target total dough weight and the baker's percentages, solve for the
 // flour weight, then derive everything else from it.
-const computeRecipe = ({ totalWeight, hydration, salt, leavening }) => {
+export const computeRecipe = ({ totalWeight, hydration, salt, leavening }) => {
     const sumOfPercents = 100 + Number(hydration) + Number(salt) + Number(leavening);
     const flour = (totalWeight * 100) / sumOfPercents;
     const water = (flour * Number(hydration)) / 100;
@@ -40,25 +41,37 @@ const computeRecipe = ({ totalWeight, hydration, salt, leavening }) => {
     };
 };
 
-const NumberField = ({ label, suffix, value, min, step, onChange }) => (
-    <label className="field">
-        <span className="field-label">{label}</span>
-        <span className="field-input">
-            <input
-                type="number"
-                min={min}
-                step={step}
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
+const capitalize = (text) => text.replace(/^\w/, (c) => c.toUpperCase());
+
+const NumberField = ({ label, suffix, value, onChange }) => (
+    <View style={styles.field}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <View style={styles.fieldInput}>
+            <TextInput
+                style={styles.textInput}
+                keyboardType="numeric"
+                inputMode="numeric"
+                value={String(value)}
+                onChangeText={onChange}
             />
-            {suffix ? <span className="field-suffix">{suffix}</span> : null}
-        </span>
-    </label>
+            {suffix ? <Text style={styles.fieldSuffix}>{suffix}</Text> : null}
+        </View>
+    </View>
+);
+
+const RecipeRow = ({ ingredient, percent, grams, isTotal }) => (
+    <View style={[styles.row, isTotal && styles.totalRow]}>
+        <Text style={[styles.cell, styles.cellIngredient, isTotal && styles.totalText]}>{ingredient}</Text>
+        <Text style={[styles.cell, styles.cellPercent, isTotal && styles.totalText]}>{percent}</Text>
+        <Text style={[styles.cell, styles.cellGrams, isTotal && styles.totalText]}>{grams}</Text>
+    </View>
 );
 
 const BreadCalculator = () => {
     useEffect(() => {
-        document.title = "Hydration Bread Calculator";
+        if (Platform.OS === 'web' && typeof document !== 'undefined') {
+            document.title = 'Hydration Bread Calculator';
+        }
     }, []);
 
     const [presetName, setPresetName] = useState('Country Sourdough');
@@ -88,98 +101,218 @@ const BreadCalculator = () => {
     );
 
     return (
-        <div className="calculator">
-            <header className="calculator-header">
-                <h1>Hydration Bread Calculator</h1>
-                <p className="subtitle">
-                    Scale any dough with baker&apos;s percentages &mdash; pizza is just bread with attitude.
-                </p>
-            </header>
+        <ScrollView contentContainerStyle={styles.scroll}>
+            <View style={styles.calculator}>
+                <View style={styles.header}>
+                    <Text style={styles.title}>Hydration Bread Calculator</Text>
+                    <Text style={styles.subtitle}>
+                        Scale any dough with baker&apos;s percentages — pizza is just bread with attitude.
+                    </Text>
+                </View>
 
-            <div className="calculator-body">
-                <section className="panel inputs">
-                    <label className="field">
-                        <span className="field-label">Style preset</span>
-                        <span className="field-input">
-                            <select value={presetName} onChange={(e) => applyPreset(e.target.value)}>
-                                {Object.keys(PRESETS).map((name) => (
-                                    <option key={name} value={name}>{name}</option>
-                                ))}
-                            </select>
-                        </span>
-                    </label>
+                <View style={styles.body}>
+                    <View style={styles.panel}>
+                        <View style={styles.field}>
+                            <Text style={styles.fieldLabel}>Style preset</Text>
+                            <View style={styles.fieldInput}>
+                                <Picker
+                                    selectedValue={presetName}
+                                    onValueChange={applyPreset}
+                                    style={styles.picker}
+                                >
+                                    {Object.keys(PRESETS).map((name) => (
+                                        <Picker.Item key={name} label={name} value={name} />
+                                    ))}
+                                </Picker>
+                            </View>
+                        </View>
 
-                    <div className="field-row">
-                        <NumberField
-                            label={preset.unitLabel.replace(/^\w/, (c) => c.toUpperCase())}
-                            value={units}
-                            min={1}
-                            step={1}
-                            onChange={setUnits}
-                        />
-                        <NumberField
-                            label="Weight each"
-                            suffix="g"
-                            value={unitWeight}
-                            min={1}
-                            step={10}
-                            onChange={setUnitWeight}
-                        />
-                    </div>
+                        <View style={styles.fieldRow}>
+                            <View style={styles.fieldRowItem}>
+                                <NumberField label={capitalize(preset.unitLabel)} value={units} onChange={setUnits} />
+                            </View>
+                            <View style={styles.fieldRowItem}>
+                                <NumberField label="Weight each" suffix="g" value={unitWeight} onChange={setUnitWeight} />
+                            </View>
+                        </View>
 
-                    <NumberField label="Hydration" suffix="%" value={hydration} min={0} step={1} onChange={setHydration} />
-                    <NumberField label="Salt" suffix="%" value={salt} min={0} step={0.1} onChange={setSalt} />
-                    <NumberField label="Yeast / Starter" suffix="%" value={leavening} min={0} step={0.1} onChange={setLeavening} />
+                        <NumberField label="Hydration" suffix="%" value={hydration} onChange={setHydration} />
+                        <NumberField label="Salt" suffix="%" value={salt} onChange={setSalt} />
+                        <NumberField label="Yeast / Starter" suffix="%" value={leavening} onChange={setLeavening} />
 
-                    <p className="total-target">
-                        Target dough weight: <strong>{round(totalWeight)} g</strong>
-                    </p>
-                </section>
+                        <Text style={styles.totalTarget}>
+                            Target dough weight: <Text style={styles.totalTargetStrong}>{round(totalWeight)} g</Text>
+                        </Text>
+                    </View>
 
-                <section className="panel results">
-                    <h2>Recipe</h2>
-                    <table className="recipe-table">
-                        <thead>
-                            <tr>
-                                <th>Ingredient</th>
-                                <th>Baker&apos;s %</th>
-                                <th>Grams</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>Flour</td>
-                                <td>100%</td>
-                                <td>{recipe.flour} g</td>
-                            </tr>
-                            <tr>
-                                <td>Water</td>
-                                <td>{round(hydration, 1)}%</td>
-                                <td>{recipe.water} g</td>
-                            </tr>
-                            <tr>
-                                <td>Salt</td>
-                                <td>{round(salt, 1)}%</td>
-                                <td>{recipe.salt} g</td>
-                            </tr>
-                            <tr>
-                                <td>Yeast / Starter</td>
-                                <td>{round(leavening, 1)}%</td>
-                                <td>{recipe.leavening} g</td>
-                            </tr>
-                        </tbody>
-                        <tfoot>
-                            <tr>
-                                <td>Total dough</td>
-                                <td>&mdash;</td>
-                                <td>{recipe.total} g</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </section>
-            </div>
-        </div>
+                    <View style={styles.panel}>
+                        <Text style={styles.panelTitle}>Recipe</Text>
+                        <View style={styles.headerRow}>
+                            <Text style={[styles.headerCell, styles.cellIngredient]}>Ingredient</Text>
+                            <Text style={[styles.headerCell, styles.cellPercent]}>Baker&apos;s %</Text>
+                            <Text style={[styles.headerCell, styles.cellGrams]}>Grams</Text>
+                        </View>
+                        <RecipeRow ingredient="Flour" percent="100%" grams={`${recipe.flour} g`} />
+                        <RecipeRow ingredient="Water" percent={`${round(hydration, 1)}%`} grams={`${recipe.water} g`} />
+                        <RecipeRow ingredient="Salt" percent={`${round(salt, 1)}%`} grams={`${recipe.salt} g`} />
+                        <RecipeRow ingredient="Yeast / Starter" percent={`${round(leavening, 1)}%`} grams={`${recipe.leavening} g`} />
+                        <RecipeRow ingredient="Total dough" percent="—" grams={`${recipe.total} g`} isTotal />
+                    </View>
+                </View>
+            </View>
+        </ScrollView>
     );
 };
+
+const styles = StyleSheet.create({
+    scroll: {
+        flexGrow: 1,
+        backgroundColor: '#fdf6ec',
+        alignItems: 'center',
+        paddingVertical: 32,
+        paddingHorizontal: 16,
+    },
+    calculator: {
+        width: '100%',
+        maxWidth: 860,
+    },
+    header: {
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    title: {
+        fontSize: 32,
+        fontWeight: '700',
+        color: '#7a3e12',
+        textAlign: 'center',
+    },
+    subtitle: {
+        marginTop: 8,
+        fontSize: 16,
+        color: '#8a7b6b',
+        textAlign: 'center',
+    },
+    body: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 16,
+    },
+    panel: {
+        flexGrow: 1,
+        flexBasis: 320,
+        backgroundColor: '#fffaf3',
+        borderColor: '#ece0d1',
+        borderWidth: 1,
+        borderRadius: 14,
+        padding: 20,
+    },
+    panelTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#7a3e12',
+        marginBottom: 12,
+    },
+    field: {
+        marginBottom: 16,
+    },
+    fieldRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    fieldRowItem: {
+        flex: 1,
+    },
+    fieldLabel: {
+        fontWeight: '600',
+        fontSize: 14,
+        marginBottom: 6,
+        color: '#5c4a38',
+    },
+    fieldInput: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        borderColor: '#d9c9b5',
+        borderWidth: 1,
+        borderRadius: 8,
+        overflow: 'hidden',
+    },
+    textInput: {
+        flex: 1,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        fontSize: 16,
+        color: '#2b2118',
+    },
+    picker: {
+        flex: 1,
+        paddingVertical: 10,
+        paddingHorizontal: 8,
+        fontSize: 16,
+        color: '#2b2118',
+        backgroundColor: '#fff',
+        borderWidth: 0,
+    },
+    fieldSuffix: {
+        paddingHorizontal: 12,
+        color: '#a08b74',
+        fontWeight: '600',
+    },
+    totalTarget: {
+        marginTop: 12,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#e2d3c0',
+        color: '#5c4a38',
+    },
+    totalTargetStrong: {
+        color: '#7a3e12',
+        fontWeight: '700',
+    },
+    headerRow: {
+        flexDirection: 'row',
+        borderBottomWidth: 1,
+        borderBottomColor: '#efe3d4',
+        paddingBottom: 8,
+    },
+    headerCell: {
+        fontSize: 12,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        color: '#a08b74',
+        fontWeight: '600',
+    },
+    row: {
+        flexDirection: 'row',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#efe3d4',
+    },
+    totalRow: {
+        borderBottomWidth: 0,
+        borderTopWidth: 2,
+        borderTopColor: '#e2d3c0',
+    },
+    cell: {
+        color: '#2b2118',
+        fontSize: 15,
+    },
+    cellIngredient: {
+        flex: 2,
+    },
+    cellPercent: {
+        flex: 1,
+        textAlign: 'center',
+        color: '#8a7b6b',
+    },
+    cellGrams: {
+        flex: 1,
+        textAlign: 'right',
+    },
+    totalText: {
+        fontWeight: '700',
+        color: '#7a3e12',
+    },
+});
 
 export default BreadCalculator;

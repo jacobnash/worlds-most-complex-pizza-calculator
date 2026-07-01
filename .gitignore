@@ -6,11 +6,34 @@
 # testing
 /coverage
 
-# production
-/build
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+/ios
+/android
+
+# Metro
+.metro-health-check*
 
 # misc
 .DS_Store
+*.pem
 .env.local
 .env.development.local
 .env.test.local

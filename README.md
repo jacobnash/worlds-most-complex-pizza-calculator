@@ -1,70 +1,69 @@
-# Getting Started with Create React App
+# Hydration Bread Calculator
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A cross-platform (iOS / Android / web) dough calculator built with
+[Expo](https://expo.dev) + React Native. It uses **baker's percentages** — flour
+is always 100%, and every other ingredient (water/hydration, salt, yeast or
+starter) is expressed as a percentage of the flour weight. Pizza dough is just
+one style preset of the same model.
 
-## Available Scripts
+The web build is deployed to **Firebase Hosting**.
 
-In the project directory, you can run:
+## Tech stack
 
-### `yarn start`
+- **Expo SDK 57** / React Native 0.86 / React 19
+- **react-native-web** for the web target
+- **Jest** (`jest-expo`) + `@testing-library/react-native` for tests
+- **ESLint** (`eslint-config-expo`)
+- **Firebase Hosting** for the exported web app
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+## Prerequisites
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+- **Node.js 20** (Expo SDK 57 LTS target). This repo installs deps with `npm`.
 
-### `yarn test`
+## Available scripts
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+In the project directory:
 
-### `yarn build`
+### `npm run web`
+Runs the app in the browser via the Expo dev server (Metro). Defaults to
+[http://localhost:8081](http://localhost:8081).
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### `npm start`
+Starts the Expo dev server for all platforms (press `w` for web, `a` for
+Android, `i` for iOS). Use the Expo Go app or a simulator for native.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### `npm test`
+Runs the Jest test suite (`jest-expo` preset).
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### `npm run lint`
+Runs ESLint over the project.
 
-### `yarn eject`
+### `npm run export:web`
+Exports a static production web build to the `dist/` folder
+(`expo export -p web`).
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+## Deploying to Firebase Hosting
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Hosting config lives in `firebase.json` (serves `dist/`, with an SPA rewrite to
+`index.html`) and `.firebaserc` (project alias).
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+```bash
+# 1. Build the static web bundle
+npm run export:web
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+# 2. (Optional) preview locally with the Firebase emulator
+npx firebase-tools emulators:start --only hosting
 
-## Learn More
+# 3. Deploy (requires a Firebase project + auth)
+#    Set the project id in .firebaserc, then authenticate via
+#    `firebase login` or a CI token (FIREBASE_TOKEN), and run:
+npm run deploy
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Project structure
 
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `yarn build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- `App.js` — app entry, renders the calculator.
+- `src/bread/BreadCalculator.js` — the calculator UI + baker's-percentage math
+  (`computeRecipe`, `PRESETS`).
+- `src/bread/BreadCalculator.test.js` — unit + render tests.
+- `firebase.json` / `.firebaserc` — Firebase Hosting config.
