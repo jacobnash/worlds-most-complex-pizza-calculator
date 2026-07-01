@@ -1,0 +1,151 @@
+.calculator {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    text-align: left;
+    color: #2b2118;
+}
+
+.calculator-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.calculator-header h1 {
+    font-size: 2.25rem;
+    margin: 0 0 0.5rem;
+    color: #7a3e12;
+}
+
+.subtitle {
+    margin: 0;
+    color: #8a7b6b;
+    font-size: 1.05rem;
+}
+
+.calculator-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.panel {
+    background: #fffaf3;
+    border: 1px solid #ece0d1;
+    border-radius: 14px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 24px rgba(122, 62, 18, 0.08);
+}
+
+.field {
+    display: block;
+    margin-bottom: 1.1rem;
+}
+
+.field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.field-label {
+    display: block;
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 0.35rem;
+    color: #5c4a38;
+}
+
+.field-input {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border: 1px solid #d9c9b5;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field-input:focus-within {
+    border-color: #d98a3d;
+    box-shadow: 0 0 0 3px rgba(217, 138, 61, 0.18);
+}
+
+.field-input input,
+.field-input select {
+    flex: 1;
+    border: none;
+    outline: none;
+    padding: 0.6rem 0.75rem;
+    font-size: 1rem;
+    background: transparent;
+    color: #2b2118;
+}
+
+.field-suffix {
+    padding: 0 0.75rem;
+    color: #a08b74;
+    font-weight: 600;
+}
+
+.total-target {
+    margin: 1.25rem 0 0;
+    padding-top: 1rem;
+    border-top: 1px dashed #e2d3c0;
+    color: #5c4a38;
+}
+
+.total-target strong {
+    color: #7a3e12;
+}
+
+.results h2 {
+    margin: 0 0 1rem;
+    color: #7a3e12;
+}
+
+.recipe-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1rem;
+}
+
+.recipe-table th,
+.recipe-table td {
+    text-align: left;
+    padding: 0.6rem 0.5rem;
+    border-bottom: 1px solid #efe3d4;
+}
+
+.recipe-table th {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #a08b74;
+}
+
+.recipe-table td:last-child,
+.recipe-table th:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.recipe-table td:nth-child(2),
+.recipe-table th:nth-child(2) {
+    text-align: center;
+    color: #8a7b6b;
+}
+
+.recipe-table tfoot td {
+    font-weight: 700;
+    color: #7a3e12;
+    border-bottom: none;
+    border-top: 2px solid #e2d3c0;
+}
+
+@media (max-width: 680px) {
+    .calculator-body {
+        grid-template-columns: 1fr;
+    }
+}

@@ -1,15 +1,10 @@
-import logo from './logo.svg';
 import './App.css';
-import PizzaDoughCalc from './pizza/Pizza.js'
-
-
+import BreadCalculator from './bread/BreadCalculator.js';
 
 const App = () => {
   return (
     <div className="App">
-      <div>
-        {PizzaDoughCalc()}
-      </div>
+      <BreadCalculator />
     </div>
   );
 }
