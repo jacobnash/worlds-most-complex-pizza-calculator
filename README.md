@@ -47,18 +47,40 @@ Exports a static production web build to the `dist/` folder
 Hosting config lives in `firebase.json` (serves `dist/`, with an SPA rewrite to
 `index.html`) and `.firebaserc` (project alias).
 
+### One-time Firebase setup
+
+1. Create a Firebase project at <https://console.firebase.google.com> (or
+   `firebase projects:create <id>` once logged in).
+2. Put your project id in `.firebaserc` (replace the `default` alias), or pass
+   `--project <id>` on each command.
+
+### Preview locally (no account needed)
+
 ```bash
-# 1. Build the static web bundle
 npm run export:web
-
-# 2. (Optional) preview locally with the Firebase emulator
-npx firebase-tools emulators:start --only hosting
-
-# 3. Deploy (requires a Firebase project + auth)
-#    Set the project id in .firebaserc, then authenticate via
-#    `firebase login` or a CI token (FIREBASE_TOKEN), and run:
-npm run deploy
+npx firebase-tools emulators:start --only hosting   # http://127.0.0.1:5000
 ```
+
+### Deploy from your machine
+
+```bash
+npm install -g firebase-tools
+firebase login                 # interactive, opens a browser
+npm run export:web
+npm run deploy                 # firebase deploy --only hosting
+```
+
+### Deploy from CI (recommended)
+
+`.github/workflows/firebase-hosting.yml` builds the web export and deploys on
+every push to `main` (and posts a preview channel on pull requests). Add two
+repository secrets:
+
+- `FIREBASE_SERVICE_ACCOUNT` — a service-account JSON key with the
+  **Firebase Hosting Admin** role (generate via
+  `firebase init hosting:github`, or in the Google Cloud console). Paste the
+  entire JSON.
+- `FIREBASE_PROJECT_ID` — your Firebase project id.
 
 ## Project structure
 
