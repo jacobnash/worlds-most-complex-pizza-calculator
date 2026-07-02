@@ -9,13 +9,26 @@ import { Picker } from '@react-native-picker/picker';
 //
 // Each preset is a starting point. All values stay editable so you can tweak a
 // recipe (or dial in your own) after picking a preset.
+
+// The three ways this app leavens dough. Commercial yeasts are dosed as a tiny
+// percentage of flour; the defaults below are roughly equivalent leavening
+// power (fresh/cake yeast is ~3x instant, active dry ~1.25x). A sourdough
+// starter is dosed much higher and, because it is itself flour + water, it
+// contributes both back to the dough — so we track that to report the *true*
+// hydration.
+export const LEAVENINGS = {
+    'Sourdough Starter': { defaultPercent: 20, contributesToDough: true, starterHydration: 100 },
+    'Instant Yeast': { defaultPercent: 0.5, contributesToDough: false },
+    'Cake Yeast': { defaultPercent: 1.5, contributesToDough: false },
+};
+
 export const PRESETS = {
-    'Neapolitan Pizza': { hydration: 60, salt: 2.8, leavening: 0.2, unitWeight: 250, units: 4, unitLabel: 'dough balls' },
-    'New York Pizza': { hydration: 62, salt: 2.0, leavening: 0.5, unitWeight: 280, units: 4, unitLabel: 'dough balls' },
-    'Ciabatta': { hydration: 80, salt: 2.0, leavening: 0.6, unitWeight: 400, units: 2, unitLabel: 'loaves' },
-    'Baguette': { hydration: 68, salt: 2.0, leavening: 0.6, unitWeight: 350, units: 3, unitLabel: 'baguettes' },
-    'Country Sourdough': { hydration: 75, salt: 2.0, leavening: 20, unitWeight: 900, units: 1, unitLabel: 'loaves' },
-    'Custom': { hydration: 70, salt: 2.0, leavening: 1.0, unitWeight: 500, units: 2, unitLabel: 'loaves' },
+    'Neapolitan Pizza': { hydration: 60, salt: 2.8, leavening: 0.2, leaveningType: 'Instant Yeast', unitWeight: 250, units: 4, unitLabel: 'dough balls' },
+    'New York Pizza': { hydration: 62, salt: 2.0, leavening: 0.5, leaveningType: 'Instant Yeast', unitWeight: 280, units: 4, unitLabel: 'dough balls' },
+    'Ciabatta': { hydration: 80, salt: 2.0, leavening: 0.6, leaveningType: 'Instant Yeast', unitWeight: 400, units: 2, unitLabel: 'loaves' },
+    'Baguette': { hydration: 68, salt: 2.0, leavening: 0.6, leaveningType: 'Instant Yeast', unitWeight: 350, units: 3, unitLabel: 'baguettes' },
+    'Country Sourdough': { hydration: 72, salt: 2.0, leavening: 20, leaveningType: 'Sourdough Starter', unitWeight: 900, units: 1, unitLabel: 'loaves' },
+    'Custom': { hydration: 70, salt: 2.0, leavening: 1.0, leaveningType: 'Instant Yeast', unitWeight: 500, units: 2, unitLabel: 'loaves' },
 };
 
 const round = (value, decimals = 0) => {
@@ -24,13 +37,29 @@ const round = (value, decimals = 0) => {
 };
 
 // Given a target total dough weight and the baker's percentages, solve for the
-// flour weight, then derive everything else from it.
-export const computeRecipe = ({ totalWeight, hydration, salt, leavening }) => {
+// flour weight, then derive everything else from it. When the leavening is a
+// sourdough starter, split the starter into the flour and water it carries and
+// fold those into the totals so we can report the true hydration.
+export const computeRecipe = ({ totalWeight, hydration, salt, leavening, leaveningType = 'Instant Yeast' }) => {
     const sumOfPercents = 100 + Number(hydration) + Number(salt) + Number(leavening);
     const flour = (totalWeight * 100) / sumOfPercents;
     const water = (flour * Number(hydration)) / 100;
     const saltGrams = (flour * Number(salt)) / 100;
     const leaveningGrams = (flour * Number(leavening)) / 100;
+
+    const spec = LEAVENINGS[leaveningType] || {};
+    let starterFlour = 0;
+    let starterWater = 0;
+    if (spec.contributesToDough) {
+        const starterHydration = spec.starterHydration ?? 100;
+        // starter = flourPart + waterPart, with waterPart = flourPart * hydration/100.
+        starterFlour = leaveningGrams / (1 + starterHydration / 100);
+        starterWater = leaveningGrams - starterFlour;
+    }
+
+    const totalFlour = flour + starterFlour;
+    const totalWater = water + starterWater;
+    const trueHydration = totalFlour > 0 ? (totalWater / totalFlour) * 100 : 0;
 
     return {
         flour: round(flour),
@@ -38,6 +67,12 @@ export const computeRecipe = ({ totalWeight, hydration, salt, leavening }) => {
         salt: round(saltGrams, 1),
         leavening: round(leaveningGrams, 1),
         total: round(flour + water + saltGrams + leaveningGrams),
+        starterFlour: round(starterFlour),
+        starterWater: round(starterWater),
+        totalFlour: round(totalFlour),
+        totalWater: round(totalWater),
+        trueHydration: round(trueHydration, 1),
+        contributesToDough: !!spec.contributesToDough,
     };
 };
 
@@ -80,6 +115,7 @@ const BreadCalculator = () => {
     const [hydration, setHydration] = useState(preset.hydration);
     const [salt, setSalt] = useState(preset.salt);
     const [leavening, setLeavening] = useState(preset.leavening);
+    const [leaveningType, setLeaveningType] = useState(preset.leaveningType);
     const [units, setUnits] = useState(preset.units);
     const [unitWeight, setUnitWeight] = useState(preset.unitWeight);
 
@@ -89,15 +125,23 @@ const BreadCalculator = () => {
         setHydration(next.hydration);
         setSalt(next.salt);
         setLeavening(next.leavening);
+        setLeaveningType(next.leaveningType);
         setUnits(next.units);
         setUnitWeight(next.unitWeight);
+    };
+
+    // Switching leavening type reloads that type's typical dose so the numbers
+    // stay sensible (e.g. 20% starter vs 0.5% instant yeast).
+    const changeLeaveningType = (type) => {
+        setLeaveningType(type);
+        setLeavening(LEAVENINGS[type].defaultPercent);
     };
 
     const totalWeight = Number(units) * Number(unitWeight);
 
     const recipe = useMemo(
-        () => computeRecipe({ totalWeight, hydration, salt, leavening }),
-        [totalWeight, hydration, salt, leavening]
+        () => computeRecipe({ totalWeight, hydration, salt, leavening, leaveningType }),
+        [totalWeight, hydration, salt, leavening, leaveningType]
     );
 
     return (
@@ -138,7 +182,23 @@ const BreadCalculator = () => {
 
                         <NumberField label="Hydration" suffix="%" value={hydration} onChange={setHydration} />
                         <NumberField label="Salt" suffix="%" value={salt} onChange={setSalt} />
-                        <NumberField label="Yeast / Starter" suffix="%" value={leavening} onChange={setLeavening} />
+
+                        <View style={styles.field}>
+                            <Text style={styles.fieldLabel}>Leavening</Text>
+                            <View style={styles.fieldInput}>
+                                <Picker
+                                    selectedValue={leaveningType}
+                                    onValueChange={changeLeaveningType}
+                                    style={styles.picker}
+                                >
+                                    {Object.keys(LEAVENINGS).map((type) => (
+                                        <Picker.Item key={type} label={type} value={type} />
+                                    ))}
+                                </Picker>
+                            </View>
+                        </View>
+
+                        <NumberField label={`${leaveningType} amount`} suffix="%" value={leavening} onChange={setLeavening} />
 
                         <Text style={styles.totalTarget}>
                             Target dough weight: <Text style={styles.totalTargetStrong}>{round(totalWeight)} g</Text>
@@ -155,8 +215,17 @@ const BreadCalculator = () => {
                         <RecipeRow ingredient="Flour" percent="100%" grams={`${recipe.flour} g`} />
                         <RecipeRow ingredient="Water" percent={`${round(hydration, 1)}%`} grams={`${recipe.water} g`} />
                         <RecipeRow ingredient="Salt" percent={`${round(salt, 1)}%`} grams={`${recipe.salt} g`} />
-                        <RecipeRow ingredient="Yeast / Starter" percent={`${round(leavening, 1)}%`} grams={`${recipe.leavening} g`} />
+                        <RecipeRow ingredient={leaveningType} percent={`${round(leavening, 1)}%`} grams={`${recipe.leavening} g`} />
                         <RecipeRow ingredient="Total dough" percent="—" grams={`${recipe.total} g`} isTotal />
+
+                        {recipe.contributesToDough ? (
+                            <Text style={styles.note}>
+                                Starter is flour + water, so it adds ~{recipe.starterFlour} g flour and{' '}
+                                {recipe.starterWater} g water. True hydration incl. starter:{' '}
+                                <Text style={styles.noteStrong}>{recipe.trueHydration}%</Text>{' '}
+                                ({recipe.totalWater} g water / {recipe.totalFlour} g flour).
+                            </Text>
+                        ) : null}
                     </View>
                 </View>
             </View>
@@ -312,6 +381,16 @@ const styles = StyleSheet.create({
     totalText: {
         fontWeight: '700',
         color: '#7a3e12',
+    },
+    note: {
+        marginTop: 14,
+        fontSize: 13,
+        lineHeight: 19,
+        color: '#8a7b6b',
+    },
+    noteStrong: {
+        color: '#7a3e12',
+        fontWeight: '700',
     },
 });
 
