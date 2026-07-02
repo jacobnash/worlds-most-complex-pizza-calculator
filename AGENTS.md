@@ -33,4 +33,4 @@ npm run web    # Expo dev server (Metro), serves http://localhost:8081
   # serves dist/ at http://127.0.0.1:5000
   ```
 - Actual `npm run deploy` (`firebase deploy`) needs a real Firebase project id in `.firebaserc` and auth (interactive `firebase login`, or a `FIREBASE_TOKEN` / service-account for CI).
-- CI deploy: `.github/workflows/firebase-hosting.yml` builds the web export and deploys via `FirebaseExtended/action-hosting-deploy` (live on push to `main`, preview channel on PRs). It requires repo secrets `FIREBASE_SERVICE_ACCOUNT` (JSON key, Firebase Hosting Admin) and `FIREBASE_PROJECT_ID`.
+- CI deploy: `.github/workflows/firebase-hosting.yml` builds the web export and deploys via `FirebaseExtended/action-hosting-deploy` (live on push to `main`, preview channel on PRs). Project id `pizza-app-36305` is pinned in the workflow and `.firebaserc`; the only repo secret required is `FIREBASE_SERVICE_ACCOUNT` (JSON key, Firebase Hosting Admin).

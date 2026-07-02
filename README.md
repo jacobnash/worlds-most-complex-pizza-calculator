@@ -47,12 +47,10 @@ Exports a static production web build to the `dist/` folder
 Hosting config lives in `firebase.json` (serves `dist/`, with an SPA rewrite to
 `index.html`) and `.firebaserc` (project alias).
 
-### One-time Firebase setup
+### Project
 
-1. Create a Firebase project at <https://console.firebase.google.com> (or
-   `firebase projects:create <id>` once logged in).
-2. Put your project id in `.firebaserc` (replace the `default` alias), or pass
-   `--project <id>` on each command.
+The Firebase project id is **`pizza-app-36305`** (set in `.firebaserc` and in the
+CI workflow). Enable Hosting once under Build > Hosting in the Firebase console.
 
 ### Preview locally (no account needed)
 
@@ -73,14 +71,13 @@ npm run deploy                 # firebase deploy --only hosting
 ### Deploy from CI (recommended)
 
 `.github/workflows/firebase-hosting.yml` builds the web export and deploys on
-every push to `main` (and posts a preview channel on pull requests). Add two
-repository secrets:
+every push to `main` (and posts a preview channel on pull requests). The project
+id is already pinned in the workflow, so you only need one repository secret:
 
 - `FIREBASE_SERVICE_ACCOUNT` — a service-account JSON key with the
   **Firebase Hosting Admin** role (generate via
   `firebase init hosting:github`, or in the Google Cloud console). Paste the
   entire JSON.
-- `FIREBASE_PROJECT_ID` — your Firebase project id.
 
 ## Project structure
 
