@@ -20,6 +20,8 @@ import BreadCalculator, {
   SALT_SLIDER,
   SALT_ABSOLUTE,
   HYDRATION_ABSOLUTE,
+  TEMPERATURE_ABSOLUTE,
+  TEMPERATURE_SLIDER,
   LEAVENINGS,
   parseBakeDateTime,
   PRESETS,
@@ -335,6 +337,19 @@ describe('getDynamicSliderRange', () => {
       min: 96,
       max: 100,
     });
+  });
+
+  test('recentres temperature within 0–35°C', () => {
+    expect(getDynamicSliderRange(24, TEMPERATURE_SLIDER, TEMPERATURE_ABSOLUTE)).toMatchObject({
+      min: 16,
+      max: 33,
+    });
+    expect(getDynamicSliderRange(35, TEMPERATURE_SLIDER, TEMPERATURE_ABSOLUTE)).toMatchObject({
+      min: 18,
+      max: 35,
+    });
+    expect(clampSliderValue(40, TEMPERATURE_ABSOLUTE)).toBe(35);
+    expect(clampSliderValue(-5, TEMPERATURE_ABSOLUTE)).toBe(0);
   });
 });
 

@@ -93,6 +93,7 @@ export const getLeaveningSliderRange = (leaveningType) => {
 export const HYDRATION_SLIDER = { min: 50, max: 100, step: 1 };
 export const SALT_SLIDER = { min: 0, max: 4, step: 0.1 };
 export const TEMPERATURE_SLIDER = { min: 15, max: 32, step: 1 };
+export const TEMPERATURE_ABSOLUTE = { min: 0, max: 35, step: 1 };
 
 export const PERCENT_MIN = 0;
 export const PERCENT_MAX = 100;
@@ -107,18 +108,6 @@ export const getPercentAbsoluteRange = (step = 1) => ({
 
 export const HYDRATION_ABSOLUTE = getPercentAbsoluteRange(1);
 export const SALT_ABSOLUTE = getPercentAbsoluteRange(0.1);
-
-const extendSliderAbsolute = ({ min, max, step }, floorMin) => {
-    const half = (max - min) / 2;
-    const absoluteMin = Math.max(floorMin ?? min, min - half);
-    return {
-        min: absoluteMin,
-        max: max + half,
-        step,
-    };
-};
-
-export const TEMPERATURE_ABSOLUTE = extendSliderAbsolute(TEMPERATURE_SLIDER, 0);
 
 // Recentre a fixed-width window on the current value. Salt at 2% shows 0–4%;
 // at 4% the same-width window shifts to 2–6%.
