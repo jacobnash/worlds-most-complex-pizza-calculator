@@ -1,15 +1,30 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
 import BreadCalculator, {
+  computeBakeSchedule,
+  computePrefermentPeakHours,
   computeRecipe,
   computeStarterFeed,
   computeStarterPlan,
   computeLevainPeakHours,
   computeTiming,
+  clampLeavening,
+  formatDateTime,
   formatDuration,
+  getLeaveningSliderRange,
   LEAVENINGS,
+  parseBakeDateTime,
   PRESETS,
+  subtractHours,
 } from './BreadCalculator';
+
+jest.mock('@react-native-community/slider', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const MockSlider = (props) => <View testID="leavening-slider" {...props} />;
+  MockSlider.displayName = 'MockSlider';
+  return MockSlider;
+});
 
 describe('computeRecipe (baker\'s percentages)', () => {
   test('solves flour from the target dough weight and derives the rest', () => {
@@ -46,6 +61,16 @@ describe('computeRecipe (baker\'s percentages)', () => {
     // pulls the true hydration up toward 100%.
     expect(recipe.trueHydration).toBeGreaterThan(70);
     expect(recipe.trueHydration).toBeLessThan(100);
+  });
+
+  test('poolish and biga contribute flour and water like sourdough starter', () => {
+    const poolish = computeRecipe({ totalWeight: 1000, hydration: 70, salt: 2, leavening: 20, leaveningType: 'Poolish' });
+    expect(poolish.contributesToDough).toBe(true);
+    expect(poolish.starterFlour).toBe(poolish.starterWater);
+
+    const biga = computeRecipe({ totalWeight: 1000, hydration: 70, salt: 2, leavening: 30, leaveningType: 'Biga' });
+    expect(biga.contributesToDough).toBe(true);
+    expect(biga.starterWater).toBeLessThan(biga.starterFlour);
   });
 
   test('cake yeast default dose is ~3x instant yeast', () => {
@@ -175,6 +200,88 @@ describe('computeTiming (fermentation time)', () => {
   });
 });
 
+describe('computePrefermentPeakHours', () => {
+  test('more poolish peaks sooner', () => {
+    const less = computePrefermentPeakHours({ leaveningType: 'Poolish', leavening: 10, temperature: 24 });
+    const more = computePrefermentPeakHours({ leaveningType: 'Poolish', leavening: 20, temperature: 24 });
+    expect(more).toBeLessThan(less);
+    expect(more).toBeCloseTo(12);
+  });
+
+  test('biga peaks slower than poolish at the same percent', () => {
+    const poolish = computePrefermentPeakHours({ leaveningType: 'Poolish', leavening: 20, temperature: 24 });
+    const biga = computePrefermentPeakHours({ leaveningType: 'Biga', leavening: 20, temperature: 24 });
+    expect(biga).toBeGreaterThan(poolish);
+  });
+
+  test('returns zero for sourdough starter (handled by starter plan)', () => {
+    expect(computePrefermentPeakHours({ leaveningType: 'Sourdough Starter', leavening: 20, temperature: 24 })).toBe(0);
+  });
+});
+
+describe('computeBakeSchedule', () => {
+  test('works backwards from a target bake time', () => {
+    const targetBakeTime = new Date(2026, 6, 7, 8, 0, 0);
+    const timing = computeTiming({ leaveningType: 'Instant Yeast', leavening: 1, temperature: 24 });
+    const schedule = computeBakeSchedule({
+      targetBakeTime,
+      timing,
+      leaveningType: 'Instant Yeast',
+    });
+
+    expect(schedule.bake.getTime()).toBe(targetBakeTime.getTime());
+    expect(schedule.steps[schedule.steps.length - 1].label).toBe('Bake');
+    expect(schedule.steps[0].label).toBe('Mix dough (autolyse)');
+    expect(schedule.mixStart.getTime()).toBe(
+      subtractHours(targetBakeTime, timing.totalHours + 20 / 60).getTime()
+    );
+  });
+
+  test('includes preferment step for poolish', () => {
+    const targetBakeTime = new Date(2026, 6, 7, 8, 0, 0);
+    const timing = computeTiming({ leaveningType: 'Poolish', leavening: 20, temperature: 24 });
+    const prefermentPeakHours = computePrefermentPeakHours({ leaveningType: 'Poolish', leavening: 20, temperature: 24 });
+    const schedule = computeBakeSchedule({
+      targetBakeTime,
+      timing,
+      leaveningType: 'Poolish',
+      prefermentPeakHours,
+    });
+
+    expect(schedule.steps[0].label).toBe('Mix poolish');
+    expect(schedule.prefermentStart.getTime()).toBe(
+      subtractHours(schedule.mixStart, prefermentPeakHours).getTime()
+    );
+  });
+});
+
+describe('parseBakeDateTime and formatDateTime', () => {
+  test('parses YYYY-MM-DD and HH:MM', () => {
+    const parsed = parseBakeDateTime('2026-07-07', '08:00');
+    expect(parsed).toBeInstanceOf(Date);
+    expect(parsed.getFullYear()).toBe(2026);
+    expect(parsed.getMonth()).toBe(6);
+    expect(parsed.getDate()).toBe(7);
+    expect(parsed.getHours()).toBe(8);
+    expect(parsed.getMinutes()).toBe(0);
+  });
+
+  test('formats a readable date string', () => {
+    const formatted = formatDateTime(new Date(2026, 6, 7, 8, 0, 0));
+    expect(formatted).toMatch(/2026/);
+    expect(formatted).toMatch(/Jul/);
+  });
+});
+
+describe('clampLeavening', () => {
+  test('clamps to the slider range for each leavening type', () => {
+    expect(clampLeavening(3, 'Sourdough Starter')).toBe(5);
+    expect(clampLeavening(25, 'Sourdough Starter')).toBe(25);
+    expect(clampLeavening(99, 'Sourdough Starter')).toBe(40);
+    expect(getLeaveningSliderRange('Poolish').max).toBe(50);
+  });
+});
+
 describe('formatDuration', () => {
   test('formats hours and minutes', () => {
     expect(formatDuration(2)).toBe('2 h');
@@ -218,8 +325,10 @@ describe('BreadCalculator', () => {
   test('shows the method steps and timing', () => {
     render(<BreadCalculator />);
     expect(screen.getByText('Method')).toBeTruthy();
-    expect(screen.getByText('Bulk ferment')).toBeTruthy();
+    expect(screen.getAllByText('Bulk ferment').length).toBeGreaterThan(0);
     expect(screen.getByText('Total rise')).toBeTruthy();
+    expect(screen.getByText('Bake schedule')).toBeTruthy();
+    expect(screen.getByText('When to start')).toBeTruthy();
   });
 
   test('links to pizza.nash.engineering in the footer', () => {

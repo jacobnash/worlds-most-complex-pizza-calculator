@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
+import Slider from '@react-native-community/slider';
 
 export const NASH_ENGINEERING_URL = 'https://pizza.nash.engineering';
 
@@ -12,8 +13,8 @@ export const NASH_ENGINEERING_URL = 'https://pizza.nash.engineering';
 // Each preset is a starting point. All values stay editable so you can tweak a
 // recipe (or dial in your own) after picking a preset.
 
-// The three ways this app leavens dough. Commercial yeasts are dosed as a tiny
-// percentage of flour; the defaults below are roughly equivalent leavening
+// Leavening types: sourdough starter, poolish, biga, and commercial yeasts.
+// Commercial yeasts are dosed as a tiny percentage of flour; the defaults below
 // power (fresh/cake yeast is ~3x instant, active dry ~1.25x). A sourdough
 // starter is dosed much higher and, because it is itself flour + water, it
 // contributes both back to the dough — so we track that to report the *true*
@@ -22,9 +23,75 @@ export const NASH_ENGINEERING_URL = 'https://pizza.nash.engineering';
 // yeast, per 1% of flour. Cake (fresh) yeast is ~1/3 as strong by weight, which
 // is why its default dose is ~3x. This drives the fermentation-time estimate.
 export const LEAVENINGS = {
-    'Sourdough Starter': { defaultPercent: 20, contributesToDough: true, starterHydration: 100 },
-    'Instant Yeast': { defaultPercent: 0.5, contributesToDough: false, powerPerPercent: 1 },
-    'Cake Yeast': { defaultPercent: 1.5, contributesToDough: false, powerPerPercent: 1 / 3 },
+    'Sourdough Starter': {
+        defaultPercent: 20,
+        contributesToDough: true,
+        starterHydration: 100,
+        isSourdough: true,
+        sliderMin: 5,
+        sliderMax: 40,
+        sliderStep: 1,
+    },
+    Poolish: {
+        defaultPercent: 20,
+        contributesToDough: true,
+        starterHydration: 100,
+        sliderMin: 10,
+        sliderMax: 50,
+        sliderStep: 1,
+    },
+    Biga: {
+        defaultPercent: 30,
+        contributesToDough: true,
+        starterHydration: 50,
+        sliderMin: 10,
+        sliderMax: 50,
+        sliderStep: 1,
+    },
+    'Instant Yeast': {
+        defaultPercent: 0.5,
+        contributesToDough: false,
+        powerPerPercent: 1,
+        sliderMin: 0.1,
+        sliderMax: 2,
+        sliderStep: 0.1,
+    },
+    'Cake Yeast': {
+        defaultPercent: 1.5,
+        contributesToDough: false,
+        powerPerPercent: 1 / 3,
+        sliderMin: 0.3,
+        sliderMax: 5,
+        sliderStep: 0.1,
+    },
+};
+
+export const AUTO_LYSE_HOURS = 20 / 60;
+const REFERENCE_POOLISH_PERCENT = 20;
+const REFERENCE_POOLISH_PEAK_HOURS = 12;
+const REFERENCE_BIGA_PERCENT = 30;
+const REFERENCE_BIGA_PEAK_HOURS = 16;
+
+export const getLeaveningSliderRange = (leaveningType) => {
+    const spec = LEAVENINGS[leaveningType] || {};
+    return {
+        min: spec.sliderMin ?? 0,
+        max: spec.sliderMax ?? 100,
+        step: spec.sliderStep ?? 1,
+    };
+};
+
+export const clampLeavening = (value, leaveningType) => {
+    const { min, max, step } = getLeaveningSliderRange(leaveningType);
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return min;
+    }
+    const clamped = Math.min(max, Math.max(min, numeric));
+    const rounded = Math.round(clamped / step) * step;
+    const decimals = step < 1 ? 1 : 0;
+    const factor = 10 ** decimals;
+    return Math.round(rounded * factor) / factor;
 };
 
 // Reference conditions for the (rough) fermentation-time model.
@@ -66,6 +133,158 @@ export const computeTiming = ({ leaveningType = 'Instant Yeast', leavening, temp
     };
 };
 
+// Rough peak time for poolish or biga before mixing the final dough.
+export const computePrefermentPeakHours = ({
+    leaveningType,
+    leavening,
+    temperature = REFERENCE_TEMP_C,
+}) => {
+    const percent = Number(leavening);
+    const temp = Number(temperature);
+    const spec = LEAVENINGS[leaveningType] || {};
+
+    if (!spec.contributesToDough || spec.isSourdough || percent <= 0) {
+        return 0;
+    }
+
+    const tempFactor = 2 ** ((REFERENCE_TEMP_C - temp) / 10);
+
+    if (leaveningType === 'Poolish') {
+        return (REFERENCE_POOLISH_PERCENT / percent) * REFERENCE_POOLISH_PEAK_HOURS * tempFactor;
+    }
+    if (leaveningType === 'Biga') {
+        return (REFERENCE_BIGA_PERCENT / percent) * REFERENCE_BIGA_PEAK_HOURS * tempFactor;
+    }
+
+    return 0;
+};
+
+export const subtractHours = (date, hours) =>
+    new Date(date.getTime() - Number(hours) * 60 * 60 * 1000);
+
+export const formatDateTime = (date) => {
+    if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
+        return '—';
+    }
+    return date.toLocaleString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+    });
+};
+
+export const parseBakeDateTime = (dateStr, timeStr) => {
+    const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr).trim());
+    const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(String(timeStr).trim());
+    if (!dateMatch || !timeMatch) {
+        return null;
+    }
+
+    const parsed = new Date(
+        Number(dateMatch[1]),
+        Number(dateMatch[2]) - 1,
+        Number(dateMatch[3]),
+        Number(timeMatch[1]),
+        Number(timeMatch[2]),
+        0,
+        0
+    );
+
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+};
+
+export const defaultBakeDate = () => {
+    const next = new Date();
+    next.setDate(next.getDate() + 1);
+    next.setHours(8, 0, 0, 0);
+    return {
+        date: next.toISOString().slice(0, 10),
+        time: '08:00',
+    };
+};
+
+const prefermentStepLabel = ({ leaveningType, starterPlan }) => {
+    if (leaveningType === 'Sourdough Starter') {
+        if (starterPlan?.doughStarter?.strategy === 'build') {
+            return 'Start levain build';
+        }
+        if (starterPlan?.doughStarter?.strategy === 'partial') {
+            return 'Start levain / use discard';
+        }
+        return 'Pre-feed starter jar';
+    }
+    if (leaveningType === 'Poolish') {
+        return 'Mix poolish';
+    }
+    if (leaveningType === 'Biga') {
+        return 'Mix biga';
+    }
+    return 'Start preferment';
+};
+
+export const computeBakeSchedule = ({
+    targetBakeTime,
+    timing,
+    leaveningType,
+    starterPlan = null,
+    prefermentPeakHours = 0,
+    autolyseHours = AUTO_LYSE_HOURS,
+}) => {
+    if (!(targetBakeTime instanceof Date) || !Number.isFinite(targetBakeTime.getTime())) {
+        return null;
+    }
+
+    const spec = LEAVENINGS[leaveningType] || {};
+    const bake = targetBakeTime;
+    const proofStart = subtractHours(bake, timing.proofHours);
+    const bulkStart = subtractHours(proofStart, timing.bulkHours);
+    const mixStart = subtractHours(bulkStart, autolyseHours);
+
+    let prefermentHours = 0;
+    if (spec.isSourdough && starterPlan) {
+        prefermentHours = starterPlan.readyInHours ?? 0;
+    } else if (spec.contributesToDough && !spec.isSourdough) {
+        prefermentHours = prefermentPeakHours;
+    }
+
+    const prefermentStart = prefermentHours > 0 ? subtractHours(mixStart, prefermentHours) : null;
+    const steps = [];
+
+    if (prefermentStart && prefermentHours > 0) {
+        steps.push({
+            label: prefermentStepLabel({ leaveningType, starterPlan }),
+            time: prefermentStart,
+            durationHours: prefermentHours,
+        });
+    }
+
+    steps.push(
+        { label: 'Mix dough (autolyse)', time: mixStart, durationHours: autolyseHours },
+        { label: 'Bulk ferment', time: bulkStart, durationHours: timing.bulkHours },
+        { label: 'Divide & shape', time: proofStart, durationHours: 0 },
+        { label: 'Final proof', time: proofStart, durationHours: timing.proofHours },
+        { label: 'Bake', time: bake, durationHours: 0 }
+    );
+
+    const firstStep = prefermentStart ?? mixStart;
+    const totalLeadHours = (bake.getTime() - firstStep.getTime()) / (60 * 60 * 1000);
+    const now = new Date();
+
+    return {
+        steps,
+        bake,
+        mixStart,
+        prefermentStart,
+        firstStep,
+        totalLeadHours,
+        inPast: firstStep < now,
+    };
+};
+
 // Format a duration in hours as e.g. "4 h 30 min".
 export const formatDuration = (hours) => {
     if (!Number.isFinite(hours) || hours <= 0) {
@@ -85,16 +304,27 @@ export const formatDuration = (hours) => {
 
 // Build a simple step-by-step method for the current dough, weaving in the
 // estimated bulk/proof times.
-export const buildMethod = ({ leaveningType, timing, temperature, units, unitLabel }) => {
+export const buildMethod = ({ leaveningType, timing, temperature, units, unitLabel, prefermentPeakHours = 0 }) => {
     const leavening = leaveningType.toLowerCase();
-    return [
+    const spec = LEAVENINGS[leaveningType] || {};
+    const steps = [];
+
+    if (spec.contributesToDough && !spec.isSourdough && prefermentPeakHours > 0) {
+        steps.push(
+            `Mix the ${leavening} (${leaveningType.toLowerCase()}) and ferment about ${formatDuration(prefermentPeakHours)} at ${Number(temperature)}°C before making the dough.`
+        );
+    }
+
+    steps.push(
         'Mix the flour and water until no dry flour remains, then rest 20 min (autolyse).',
         `Add the salt and ${leavening}; mix or knead until the dough is smooth.`,
         `Bulk ferment about ${formatDuration(timing.bulkHours)} at ${Number(temperature)}°C, with a few stretch-and-folds in the first hour.`,
         `Divide and shape into ${Number(units)} ${unitLabel}.`,
         `Proof about ${formatDuration(timing.proofHours)}, until visibly puffy.`,
-        'Bake hot (with steam for bread; a blazing oven or stone for pizza) until deep golden.',
-    ];
+        'Bake hot (with steam for bread; a blazing oven or stone for pizza) until deep golden.'
+    );
+
+    return steps;
 };
 
 export const PRESETS = {
@@ -329,6 +559,49 @@ const NumberField = ({ label, suffix, value, onChange }) => (
     </View>
 );
 
+const TextField = ({ label, value, onChange, placeholder, ...inputProps }) => (
+    <View style={styles.field}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <View style={styles.fieldInput}>
+            <TextInput
+                style={styles.textInput}
+                value={String(value)}
+                onChangeText={onChange}
+                placeholder={placeholder}
+                {...inputProps}
+            />
+        </View>
+    </View>
+);
+
+const SliderField = ({ label, suffix, value, min, max, step, onChange, gramsLabel }) => (
+    <View style={styles.field}>
+        <View style={styles.sliderHeader}>
+            <Text style={styles.fieldLabel}>{label}</Text>
+            <Text style={styles.sliderValue}>
+                {value}
+                {suffix}
+                {gramsLabel ? <Text style={styles.sliderGrams}> ({gramsLabel})</Text> : null}
+            </Text>
+        </View>
+        <Slider
+            style={styles.slider}
+            minimumValue={min}
+            maximumValue={max}
+            step={step}
+            value={Number(value)}
+            onValueChange={onChange}
+            minimumTrackTintColor="#7a3e12"
+            maximumTrackTintColor="#e2d3c0"
+            thumbTintColor="#7a3e12"
+        />
+        <View style={styles.sliderBounds}>
+            <Text style={styles.sliderBound}>{min}{suffix}</Text>
+            <Text style={styles.sliderBound}>{max}{suffix}</Text>
+        </View>
+    </View>
+);
+
 const RecipeRow = ({ ingredient, percent, grams, isTotal }) => (
     <View style={[styles.row, isTotal && styles.totalRow]}>
         <Text style={[styles.cell, styles.cellIngredient, isTotal && styles.totalText]}>{ingredient}</Text>
@@ -358,6 +631,11 @@ const BreadCalculator = () => {
     const [starterSeedKept, setStarterSeedKept] = useState(25);
     const [starterFeedTarget, setStarterFeedTarget] = useState(200);
     const [starterDiscardOnHand, setStarterDiscardOnHand] = useState(175);
+    const initialBake = defaultBakeDate();
+    const [bakeDate, setBakeDate] = useState(initialBake.date);
+    const [bakeTime, setBakeTime] = useState(initialBake.time);
+
+    const sliderRange = getLeaveningSliderRange(leaveningType);
 
     const applyPreset = (name) => {
         const next = PRESETS[name];
@@ -377,6 +655,10 @@ const BreadCalculator = () => {
         setLeavening(LEAVENINGS[type].defaultPercent);
     };
 
+    const changeLeaveningAmount = (value) => {
+        setLeavening(clampLeavening(value, leaveningType));
+    };
+
     const totalWeight = Number(units) * Number(unitWeight);
 
     const recipe = useMemo(
@@ -389,14 +671,28 @@ const BreadCalculator = () => {
         [leaveningType, leavening, temperature]
     );
 
-    const method = useMemo(
-        () => buildMethod({ leaveningType, timing, temperature, units, unitLabel: preset.unitLabel }),
-        [leaveningType, timing, temperature, units, preset.unitLabel]
+    const prefermentPeakHours = useMemo(
+        () => computePrefermentPeakHours({ leaveningType, leavening, temperature }),
+        [leaveningType, leavening, temperature]
     );
 
+    const method = useMemo(
+        () =>
+            buildMethod({
+                leaveningType,
+                timing,
+                temperature,
+                units,
+                unitLabel: preset.unitLabel,
+                prefermentPeakHours,
+            }),
+        [leaveningType, timing, temperature, units, preset.unitLabel, prefermentPeakHours]
+    );
+
+    const isSourdough = !!LEAVENINGS[leaveningType]?.isSourdough;
     const starterHydration = LEAVENINGS[leaveningType]?.starterHydration ?? 100;
     const starterPlan = useMemo(() => {
-        if (!recipe.contributesToDough) {
+        if (!isSourdough) {
             return null;
         }
         return computeStarterPlan({
@@ -409,7 +705,7 @@ const BreadCalculator = () => {
             temperature,
         });
     }, [
-        recipe.contributesToDough,
+        isSourdough,
         recipe.leavening,
         starterJarWeight,
         starterSeedKept,
@@ -418,6 +714,23 @@ const BreadCalculator = () => {
         starterHydration,
         temperature,
     ]);
+
+    const targetBakeTime = useMemo(
+        () => parseBakeDateTime(bakeDate, bakeTime),
+        [bakeDate, bakeTime]
+    );
+
+    const bakeSchedule = useMemo(
+        () =>
+            computeBakeSchedule({
+                targetBakeTime,
+                timing,
+                leaveningType,
+                starterPlan,
+                prefermentPeakHours,
+            }),
+        [targetBakeTime, timing, leaveningType, starterPlan, prefermentPeakHours]
+    );
 
     return (
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -473,8 +786,46 @@ const BreadCalculator = () => {
                             </View>
                         </View>
 
-                        <NumberField label={`${leaveningType} amount`} suffix="%" value={leavening} onChange={setLeavening} />
+                        <SliderField
+                            label={`${leaveningType} amount`}
+                            suffix="%"
+                            value={leavening}
+                            min={sliderRange.min}
+                            max={sliderRange.max}
+                            step={sliderRange.step}
+                            onChange={changeLeaveningAmount}
+                            gramsLabel={`${recipe.leavening} g`}
+                        />
                         <NumberField label="Dough temperature" suffix="°C" value={temperature} onChange={setTemperature} />
+
+                        <View style={styles.scheduleSection}>
+                            <Text style={styles.scheduleTitle}>Bake schedule</Text>
+                            <Text style={styles.scheduleIntro}>
+                                Set when you want bread in the oven — the slider above shifts preferment timing.
+                            </Text>
+                            <View style={styles.fieldRow}>
+                                <View style={styles.fieldRowItem}>
+                                    <TextField
+                                        label="Bake date"
+                                        value={bakeDate}
+                                        onChange={setBakeDate}
+                                        placeholder="YYYY-MM-DD"
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                    />
+                                </View>
+                                <View style={styles.fieldRowItem}>
+                                    <TextField
+                                        label="Bake time"
+                                        value={bakeTime}
+                                        onChange={setBakeTime}
+                                        placeholder="HH:MM"
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                    />
+                                </View>
+                            </View>
+                        </View>
 
                         <Text style={styles.totalTarget}>
                             Target dough weight: <Text style={styles.totalTargetStrong}>{round(totalWeight)} g</Text>
@@ -496,8 +847,8 @@ const BreadCalculator = () => {
 
                         {recipe.contributesToDough ? (
                             <Text style={styles.note}>
-                                Starter is flour + water, so it adds ~{recipe.starterFlour} g flour and{' '}
-                                {recipe.starterWater} g water. True hydration incl. starter:{' '}
+                                {isSourdough ? 'Starter' : leaveningType} is flour + water, so it adds ~{recipe.starterFlour} g flour and{' '}
+                                {recipe.starterWater} g water. True hydration incl. preferment:{' '}
                                 <Text style={styles.noteStrong}>{recipe.trueHydration}%</Text>{' '}
                                 ({recipe.totalWater} g water / {recipe.totalFlour} g flour).
                             </Text>
@@ -721,6 +1072,49 @@ const BreadCalculator = () => {
                             More (or stronger) leavening and warmer dough ferment faster — these are rough estimates,
                             so watch the dough, not the clock.
                         </Text>
+
+                        {bakeSchedule ? (
+                            <View style={styles.scheduleResults}>
+                                <Text style={styles.scheduleTitle}>When to start</Text>
+                                <View style={styles.timingRow}>
+                                    <Text style={styles.timingLabel}>Target bake</Text>
+                                    <Text style={styles.timingValue}>{formatDateTime(bakeSchedule.bake)}</Text>
+                                </View>
+                                <View style={[styles.timingRow, styles.timingTotalRow]}>
+                                    <Text style={[styles.timingLabel, styles.totalText]}>Start by</Text>
+                                    <Text style={[styles.timingValue, styles.totalText]}>
+                                        {formatDateTime(bakeSchedule.firstStep)}
+                                    </Text>
+                                </View>
+                                <View style={styles.timingRow}>
+                                    <Text style={styles.timingLabel}>Total lead time</Text>
+                                    <Text style={styles.timingValue}>
+                                        {formatDuration(bakeSchedule.totalLeadHours)}
+                                    </Text>
+                                </View>
+                                {bakeSchedule.inPast ? (
+                                    <Text style={styles.scheduleWarning}>
+                                        That start time is already in the past — pick a later bake time or use more
+                                        preferment for a shorter rise.
+                                    </Text>
+                                ) : null}
+                                {bakeSchedule.steps.map((step, index) => (
+                                    <View key={`${step.label}-${index}`} style={styles.scheduleStep}>
+                                        <Text style={styles.scheduleStepLabel}>{step.label}</Text>
+                                        <Text style={styles.scheduleStepTime}>{formatDateTime(step.time)}</Text>
+                                        {step.durationHours > 0 ? (
+                                            <Text style={styles.scheduleStepDuration}>
+                                                ~{formatDuration(step.durationHours)}
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                ))}
+                            </View>
+                        ) : (
+                            <Text style={styles.note}>
+                                Enter a valid bake date (YYYY-MM-DD) and time (HH:MM, 24-hour) to see your schedule.
+                            </Text>
+                        )}
                     </View>
                 </View>
 
@@ -843,6 +1237,91 @@ const styles = StyleSheet.create({
     fieldSuffix: {
         paddingHorizontal: 12,
         color: '#a08b74',
+        fontWeight: '600',
+    },
+    sliderHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+        marginBottom: 4,
+    },
+    sliderValue: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#7a3e12',
+        fontVariant: ['tabular-nums'],
+    },
+    sliderGrams: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#8a7b6b',
+    },
+    slider: {
+        width: '100%',
+        height: 36,
+    },
+    sliderBounds: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: -2,
+    },
+    sliderBound: {
+        fontSize: 12,
+        color: '#a08b74',
+    },
+    scheduleSection: {
+        marginTop: 8,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#e2d3c0',
+    },
+    scheduleTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        color: '#a08b74',
+        marginBottom: 6,
+    },
+    scheduleIntro: {
+        fontSize: 13,
+        lineHeight: 19,
+        color: '#8a7b6b',
+        marginBottom: 12,
+    },
+    scheduleResults: {
+        marginTop: 20,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#e2d3c0',
+    },
+    scheduleStep: {
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#efe3d4',
+    },
+    scheduleStepLabel: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#5c4a38',
+    },
+    scheduleStepTime: {
+        marginTop: 2,
+        fontSize: 15,
+        color: '#2b2118',
+        fontVariant: ['tabular-nums'],
+    },
+    scheduleStepDuration: {
+        marginTop: 2,
+        fontSize: 13,
+        color: '#8a7b6b',
+    },
+    scheduleWarning: {
+        marginTop: 10,
+        marginBottom: 4,
+        fontSize: 13,
+        lineHeight: 19,
+        color: '#a33b12',
         fontWeight: '600',
     },
     totalTarget: {
