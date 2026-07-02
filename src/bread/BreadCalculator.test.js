@@ -14,6 +14,7 @@ import BreadCalculator, {
   formatDateTime,
   formatDuration,
   getLeaveningSliderRange,
+  getDynamicSliderRange,
   HYDRATION_SLIDER,
   SALT_SLIDER,
   LEAVENINGS,
@@ -312,6 +313,19 @@ describe('clampSliderValue', () => {
     expect(clampSliderValue(110, HYDRATION_SLIDER)).toBe(100);
     expect(clampSliderValue(2.23, SALT_SLIDER)).toBe(2.2);
     expect(clampSliderValue(5, SALT_SLIDER)).toBe(4);
+  });
+});
+
+describe('getDynamicSliderRange', () => {
+  test('recentres salt around the current value', () => {
+    expect(getDynamicSliderRange(2, SALT_SLIDER, { min: 0, max: 6, step: 0.1 })).toMatchObject({
+      min: 0,
+      max: 4,
+    });
+    expect(getDynamicSliderRange(4, SALT_SLIDER, { min: 0, max: 6, step: 0.1 })).toMatchObject({
+      min: 2,
+      max: 6,
+    });
   });
 });
 

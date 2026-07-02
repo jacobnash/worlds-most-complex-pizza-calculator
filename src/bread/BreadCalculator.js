@@ -94,6 +94,58 @@ export const HYDRATION_SLIDER = { min: 50, max: 100, step: 1 };
 export const SALT_SLIDER = { min: 0, max: 4, step: 0.1 };
 export const TEMPERATURE_SLIDER = { min: 15, max: 32, step: 1 };
 
+// Absolute clamp limits — wider than the default window so typed values and a
+// recentering slider can move beyond the initial base range.
+const extendSliderAbsolute = ({ min, max, step }, floorMin) => {
+    const half = (max - min) / 2;
+    const absoluteMin = Math.max(floorMin ?? min, min - half);
+    return {
+        min: absoluteMin,
+        max: max + half,
+        step,
+    };
+};
+
+export const HYDRATION_ABSOLUTE = extendSliderAbsolute(HYDRATION_SLIDER, 30);
+export const SALT_ABSOLUTE = extendSliderAbsolute(SALT_SLIDER);
+export const TEMPERATURE_ABSOLUTE = extendSliderAbsolute(TEMPERATURE_SLIDER, 0);
+
+export const getLeaveningAbsoluteRange = (leaveningType) =>
+    extendSliderAbsolute(getLeaveningSliderRange(leaveningType));
+
+// Recentre a fixed-width window on the current value. Salt at 2% shows 0–4%;
+// at 4% the same-width window shifts to 2–6%.
+export const getDynamicSliderRange = (value, baseRange, absoluteRange = baseRange) => {
+    const numeric = Number(value);
+    const center = Number.isFinite(numeric) ? numeric : (baseRange.min + baseRange.max) / 2;
+    const span = baseRange.max - baseRange.min;
+    const half = span / 2;
+    const decimals = baseRange.step < 1 ? 1 : 0;
+    const factor = 10 ** decimals;
+    const snap = (n) => Math.round(n * factor) / factor;
+
+    let min = center - half;
+    let max = center + half;
+
+    if (min < absoluteRange.min) {
+        max += absoluteRange.min - min;
+        min = absoluteRange.min;
+    }
+    if (max > absoluteRange.max) {
+        min -= max - absoluteRange.max;
+        max = absoluteRange.max;
+    }
+
+    min = Math.max(absoluteRange.min, min);
+    max = Math.min(absoluteRange.max, max);
+
+    return {
+        min: snap(min),
+        max: snap(max),
+        step: baseRange.step,
+    };
+};
+
 export const clampSliderValue = (value, { min, max, step }) => {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
@@ -650,7 +702,9 @@ const TextField = ({ label, value, onChange, placeholder, ...inputProps }) => (
     </View>
 );
 
-const SliderField = ({ label, suffix, value, min, max, step, onChange, gramsLabel }) => {
+const SliderField = ({ label, suffix, value, range, clampRange, onChange, gramsLabel }) => {
+    const { min, max, step } = range;
+    const limits = clampRange ?? range;
     const [draft, setDraft] = useState(String(value));
     const isEditing = useRef(false);
 
@@ -662,9 +716,15 @@ const SliderField = ({ label, suffix, value, min, max, step, onChange, gramsLabe
 
     const commitDraft = () => {
         isEditing.current = false;
-        const clamped = clampSliderValue(draft, { min, max, step });
+        const clamped = clampSliderValue(draft, limits);
         onChange(clamped);
         setDraft(String(clamped));
+    };
+
+    const formatBound = (bound) => {
+        const decimals = step < 1 ? 1 : 0;
+        const factor = 10 ** decimals;
+        return Math.round(bound * factor) / factor;
     };
 
     return (
@@ -698,16 +758,17 @@ const SliderField = ({ label, suffix, value, min, max, step, onChange, gramsLabe
                 value={Number(value)}
                 onValueChange={(next) => {
                     isEditing.current = false;
-                    onChange(next);
-                    setDraft(String(next));
+                    const clamped = clampSliderValue(next, limits);
+                    onChange(clamped);
+                    setDraft(String(clamped));
                 }}
                 minimumTrackTintColor="#7a3e12"
                 maximumTrackTintColor="#e2d3c0"
                 thumbTintColor="#7a3e12"
             />
             <View style={styles.sliderBounds}>
-                <Text style={styles.sliderBound}>{min}{suffix}</Text>
-                <Text style={styles.sliderBound}>{max}{suffix}</Text>
+                <Text style={styles.sliderBound}>{formatBound(min)}{suffix}</Text>
+                <Text style={styles.sliderBound}>{formatBound(max)}{suffix}</Text>
             </View>
         </View>
     );
@@ -747,6 +808,22 @@ const BreadCalculator = () => {
     const [bakeTime, setBakeTime] = useState(initialBake.time);
 
     const sliderRange = getLeaveningSliderRange(leaveningType);
+    const hydrationRange = useMemo(
+        () => getDynamicSliderRange(hydration, HYDRATION_SLIDER, HYDRATION_ABSOLUTE),
+        [hydration]
+    );
+    const saltRange = useMemo(
+        () => getDynamicSliderRange(salt, SALT_SLIDER, SALT_ABSOLUTE),
+        [salt]
+    );
+    const temperatureRange = useMemo(
+        () => getDynamicSliderRange(temperature, TEMPERATURE_SLIDER, TEMPERATURE_ABSOLUTE),
+        [temperature]
+    );
+    const leaveningRange = useMemo(
+        () => getDynamicSliderRange(leavening, sliderRange, sliderRange),
+        [leavening, sliderRange]
+    );
 
     const applyPreset = (name) => {
         const next = PRESETS[name];
@@ -767,15 +844,15 @@ const BreadCalculator = () => {
     };
 
     const changeHydration = (value) => {
-        setHydration(clampSliderValue(value, HYDRATION_SLIDER));
+        setHydration(clampSliderValue(value, HYDRATION_ABSOLUTE));
     };
 
     const changeSalt = (value) => {
-        setSalt(clampSliderValue(value, SALT_SLIDER));
+        setSalt(clampSliderValue(value, SALT_ABSOLUTE));
     };
 
     const changeTemperature = (value) => {
-        setTemperature(clampSliderValue(value, TEMPERATURE_SLIDER));
+        setTemperature(clampSliderValue(value, TEMPERATURE_ABSOLUTE));
     };
 
     const changeLeaveningAmount = (value) => {
@@ -902,9 +979,8 @@ const BreadCalculator = () => {
                             label="Hydration"
                             suffix="%"
                             value={hydration}
-                            min={HYDRATION_SLIDER.min}
-                            max={HYDRATION_SLIDER.max}
-                            step={HYDRATION_SLIDER.step}
+                            range={hydrationRange}
+                            clampRange={HYDRATION_ABSOLUTE}
                             onChange={changeHydration}
                             gramsLabel={`${recipe.water} g`}
                         />
@@ -912,9 +988,8 @@ const BreadCalculator = () => {
                             label="Salt"
                             suffix="%"
                             value={salt}
-                            min={SALT_SLIDER.min}
-                            max={SALT_SLIDER.max}
-                            step={SALT_SLIDER.step}
+                            range={saltRange}
+                            clampRange={SALT_ABSOLUTE}
                             onChange={changeSalt}
                             gramsLabel={`${recipe.salt} g`}
                         />
@@ -938,9 +1013,8 @@ const BreadCalculator = () => {
                             label={`${leaveningType} amount`}
                             suffix="%"
                             value={leavening}
-                            min={sliderRange.min}
-                            max={sliderRange.max}
-                            step={sliderRange.step}
+                            range={leaveningRange}
+                            clampRange={sliderRange}
                             onChange={changeLeaveningAmount}
                             gramsLabel={`${recipe.leavening} g`}
                         />
@@ -948,9 +1022,8 @@ const BreadCalculator = () => {
                             label="Dough temperature"
                             suffix="°C"
                             value={temperature}
-                            min={TEMPERATURE_SLIDER.min}
-                            max={TEMPERATURE_SLIDER.max}
-                            step={TEMPERATURE_SLIDER.step}
+                            range={temperatureRange}
+                            clampRange={TEMPERATURE_ABSOLUTE}
                             onChange={changeTemperature}
                         />
 
