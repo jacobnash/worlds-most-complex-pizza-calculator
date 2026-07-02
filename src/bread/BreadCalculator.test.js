@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
-import BreadCalculator, { computeRecipe, computeTiming, formatDuration, LEAVENINGS } from './BreadCalculator';
+import BreadCalculator, { computeRecipe, computeTiming, formatDuration, LEAVENINGS, PRESETS } from './BreadCalculator';
 
 describe('computeRecipe (baker\'s percentages)', () => {
   test('solves flour from the target dough weight and derives the rest', () => {
@@ -81,6 +81,21 @@ describe('formatDuration', () => {
   });
 });
 
+describe('PRESETS', () => {
+  test('includes focaccia and lunch bread with sensible defaults', () => {
+    expect(PRESETS.Focaccia).toMatchObject({
+      hydration: 78,
+      unitLabel: 'pans',
+      leaveningType: 'Instant Yeast',
+    });
+    expect(PRESETS['Lunch Bread']).toMatchObject({
+      hydration: 64,
+      unitLabel: 'loaves',
+      leaveningType: 'Instant Yeast',
+    });
+  });
+});
+
 describe('BreadCalculator', () => {
   test('renders the calculator heading and a flour row', () => {
     render(<BreadCalculator />);
@@ -99,5 +114,10 @@ describe('BreadCalculator', () => {
     expect(screen.getByText('Method')).toBeTruthy();
     expect(screen.getByText('Bulk ferment')).toBeTruthy();
     expect(screen.getByText('Total rise')).toBeTruthy();
+  });
+
+  test('links to pizza.nash.engineering in the footer', () => {
+    render(<BreadCalculator />);
+    expect(screen.getByText('pizza.nash.engineering')).toBeTruthy();
   });
 });

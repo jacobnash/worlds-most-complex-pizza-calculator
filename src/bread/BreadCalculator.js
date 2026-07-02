@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
+
+export const NASH_ENGINEERING_URL = 'https://pizza.nash.engineering';
 
 // Baker's percentages: flour is always 100%. Every other ingredient is
 // expressed as a percentage of the total flour weight. Hydration is just the
@@ -95,9 +97,11 @@ export const buildMethod = ({ leaveningType, timing, temperature, units, unitLab
 export const PRESETS = {
     'Neapolitan Pizza': { hydration: 60, salt: 2.8, leavening: 0.2, leaveningType: 'Instant Yeast', unitWeight: 250, units: 4, unitLabel: 'dough balls' },
     'New York Pizza': { hydration: 62, salt: 2.0, leavening: 0.5, leaveningType: 'Instant Yeast', unitWeight: 280, units: 4, unitLabel: 'dough balls' },
-    'Ciabatta': { hydration: 80, salt: 2.0, leavening: 0.6, leaveningType: 'Instant Yeast', unitWeight: 400, units: 2, unitLabel: 'loaves' },
     'Baguette': { hydration: 68, salt: 2.0, leavening: 0.6, leaveningType: 'Instant Yeast', unitWeight: 350, units: 3, unitLabel: 'baguettes' },
+    'Ciabatta': { hydration: 80, salt: 2.0, leavening: 0.6, leaveningType: 'Instant Yeast', unitWeight: 400, units: 2, unitLabel: 'loaves' },
     'Country Sourdough': { hydration: 72, salt: 2.0, leavening: 20, leaveningType: 'Sourdough Starter', unitWeight: 900, units: 1, unitLabel: 'loaves' },
+    'Focaccia': { hydration: 78, salt: 2.2, leavening: 0.8, leaveningType: 'Instant Yeast', unitWeight: 500, units: 2, unitLabel: 'pans' },
+    'Lunch Bread': { hydration: 64, salt: 2.0, leavening: 1.5, leaveningType: 'Instant Yeast', unitWeight: 750, units: 2, unitLabel: 'loaves' },
     'Custom': { hydration: 70, salt: 2.0, leavening: 1.0, leaveningType: 'Instant Yeast', unitWeight: 500, units: 2, unitLabel: 'loaves' },
 };
 
@@ -338,6 +342,19 @@ const BreadCalculator = () => {
                         </View>
                     ))}
                 </View>
+
+                <View style={styles.footer}>
+                    <Text style={styles.footerText}>
+                        Built by{' '}
+                        <Text
+                            style={styles.footerLink}
+                            accessibilityRole="link"
+                            onPress={() => Linking.openURL(NASH_ENGINEERING_URL)}
+                        >
+                            pizza.nash.engineering
+                        </Text>
+                    </Text>
+                </View>
             </View>
         </ScrollView>
     );
@@ -558,6 +575,20 @@ const styles = StyleSheet.create({
         fontSize: 15,
         lineHeight: 22,
         color: '#2b2118',
+    },
+    footer: {
+        alignItems: 'center',
+        marginTop: 24,
+        paddingBottom: 8,
+    },
+    footerText: {
+        fontSize: 14,
+        color: '#a08b74',
+    },
+    footerLink: {
+        color: '#7a3e12',
+        fontWeight: '600',
+        textDecorationLine: 'underline',
     },
 });
 
