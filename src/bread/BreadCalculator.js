@@ -94,8 +94,20 @@ export const HYDRATION_SLIDER = { min: 50, max: 100, step: 1 };
 export const SALT_SLIDER = { min: 0, max: 4, step: 0.1 };
 export const TEMPERATURE_SLIDER = { min: 15, max: 32, step: 1 };
 
-// Absolute clamp limits — wider than the default window so typed values and a
-// recentering slider can move beyond the initial base range.
+export const PERCENT_MIN = 0;
+export const PERCENT_MAX = 100;
+
+// All baker's-% sliders clamp to 0–100 so the window can always rescale,
+// even when the typed value is way outside typical baking ranges.
+export const getPercentAbsoluteRange = (step = 1) => ({
+    min: PERCENT_MIN,
+    max: PERCENT_MAX,
+    step,
+});
+
+export const HYDRATION_ABSOLUTE = getPercentAbsoluteRange(1);
+export const SALT_ABSOLUTE = getPercentAbsoluteRange(0.1);
+
 const extendSliderAbsolute = ({ min, max, step }, floorMin) => {
     const half = (max - min) / 2;
     const absoluteMin = Math.max(floorMin ?? min, min - half);
@@ -106,12 +118,7 @@ const extendSliderAbsolute = ({ min, max, step }, floorMin) => {
     };
 };
 
-export const HYDRATION_ABSOLUTE = extendSliderAbsolute(HYDRATION_SLIDER, 30);
-export const SALT_ABSOLUTE = extendSliderAbsolute(SALT_SLIDER);
 export const TEMPERATURE_ABSOLUTE = extendSliderAbsolute(TEMPERATURE_SLIDER, 0);
-
-export const getLeaveningAbsoluteRange = (leaveningType) =>
-    extendSliderAbsolute(getLeaveningSliderRange(leaveningType));
 
 // Recentre a fixed-width window on the current value. Salt at 2% shows 0–4%;
 // at 4% the same-width window shifts to 2–6%.
@@ -159,7 +166,8 @@ export const clampSliderValue = (value, { min, max, step }) => {
 };
 
 export const clampLeavening = (value, leaveningType) => {
-    return clampSliderValue(value, getLeaveningSliderRange(leaveningType));
+    const { step } = getLeaveningSliderRange(leaveningType);
+    return clampSliderValue(value, getPercentAbsoluteRange(step));
 };
 
 // Reference conditions for the (rough) fermentation-time model.
@@ -808,6 +816,10 @@ const BreadCalculator = () => {
     const [bakeTime, setBakeTime] = useState(initialBake.time);
 
     const sliderRange = getLeaveningSliderRange(leaveningType);
+    const leaveningAbsolute = useMemo(
+        () => getPercentAbsoluteRange(sliderRange.step),
+        [sliderRange.step]
+    );
     const hydrationRange = useMemo(
         () => getDynamicSliderRange(hydration, HYDRATION_SLIDER, HYDRATION_ABSOLUTE),
         [hydration]
@@ -821,8 +833,8 @@ const BreadCalculator = () => {
         [temperature]
     );
     const leaveningRange = useMemo(
-        () => getDynamicSliderRange(leavening, sliderRange, sliderRange),
-        [leavening, sliderRange]
+        () => getDynamicSliderRange(leavening, sliderRange, leaveningAbsolute),
+        [leavening, sliderRange, leaveningAbsolute]
     );
 
     const applyPreset = (name) => {
@@ -1014,7 +1026,7 @@ const BreadCalculator = () => {
                             suffix="%"
                             value={leavening}
                             range={leaveningRange}
-                            clampRange={sliderRange}
+                            clampRange={leaveningAbsolute}
                             onChange={changeLeaveningAmount}
                             gramsLabel={`${recipe.leavening} g`}
                         />

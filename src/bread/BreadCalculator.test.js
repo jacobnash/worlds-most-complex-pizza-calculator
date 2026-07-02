@@ -15,8 +15,11 @@ import BreadCalculator, {
   formatDuration,
   getLeaveningSliderRange,
   getDynamicSliderRange,
+  getPercentAbsoluteRange,
   HYDRATION_SLIDER,
   SALT_SLIDER,
+  SALT_ABSOLUTE,
+  HYDRATION_ABSOLUTE,
   LEAVENINGS,
   parseBakeDateTime,
   PRESETS,
@@ -298,33 +301,39 @@ describe('parseBakeDateTime and formatDateTime', () => {
 });
 
 describe('clampLeavening', () => {
-  test('clamps to the slider range for each leavening type', () => {
-    expect(clampLeavening(3, 'Sourdough Starter')).toBe(5);
+  test('clamps to 0–100% for every leavening type', () => {
+    expect(clampLeavening(3, 'Sourdough Starter')).toBe(3);
     expect(clampLeavening(25, 'Sourdough Starter')).toBe(25);
-    expect(clampLeavening(99, 'Sourdough Starter')).toBe(40);
+    expect(clampLeavening(99, 'Sourdough Starter')).toBe(99);
+    expect(clampLeavening(150, 'Instant Yeast')).toBe(100);
     expect(getLeaveningSliderRange('Poolish').max).toBe(50);
   });
 });
 
 describe('clampSliderValue', () => {
-  test('clamps hydration and salt sliders', () => {
+  test('clamps typed percentages to 0–100', () => {
     expect(clampSliderValue(45, HYDRATION_SLIDER)).toBe(50);
-    expect(clampSliderValue(72, HYDRATION_SLIDER)).toBe(72);
-    expect(clampSliderValue(110, HYDRATION_SLIDER)).toBe(100);
-    expect(clampSliderValue(2.23, SALT_SLIDER)).toBe(2.2);
-    expect(clampSliderValue(5, SALT_SLIDER)).toBe(4);
+    expect(clampSliderValue(72, HYDRATION_ABSOLUTE)).toBe(72);
+    expect(clampSliderValue(110, HYDRATION_ABSOLUTE)).toBe(100);
+    expect(clampSliderValue(2.23, SALT_ABSOLUTE)).toBe(2.2);
+    expect(clampSliderValue(85, SALT_ABSOLUTE)).toBe(85);
   });
 });
 
 describe('getDynamicSliderRange', () => {
-  test('recentres salt around the current value', () => {
-    expect(getDynamicSliderRange(2, SALT_SLIDER, { min: 0, max: 6, step: 0.1 })).toMatchObject({
+  test('recentres salt around the current value within 0–100%', () => {
+    const absolute = getPercentAbsoluteRange(0.1);
+    expect(getDynamicSliderRange(2, SALT_SLIDER, absolute)).toMatchObject({
       min: 0,
       max: 4,
     });
-    expect(getDynamicSliderRange(4, SALT_SLIDER, { min: 0, max: 6, step: 0.1 })).toMatchObject({
+    expect(getDynamicSliderRange(4, SALT_SLIDER, absolute)).toMatchObject({
       min: 2,
       max: 6,
+    });
+    expect(getDynamicSliderRange(99, SALT_SLIDER, absolute)).toMatchObject({
+      min: 96,
+      max: 100,
     });
   });
 });
