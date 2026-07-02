@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import Slider from '@react-native-community/slider';
@@ -650,33 +650,68 @@ const TextField = ({ label, value, onChange, placeholder, ...inputProps }) => (
     </View>
 );
 
-const SliderField = ({ label, suffix, value, min, max, step, onChange, gramsLabel }) => (
-    <View style={styles.field}>
-        <View style={styles.sliderHeader}>
-            <Text style={styles.fieldLabel}>{label}</Text>
-            <Text style={styles.sliderValue}>
-                {value}
-                {suffix}
-                {gramsLabel ? <Text style={styles.sliderGrams}> ({gramsLabel})</Text> : null}
-            </Text>
+const SliderField = ({ label, suffix, value, min, max, step, onChange, gramsLabel }) => {
+    const [draft, setDraft] = useState(String(value));
+    const isEditing = useRef(false);
+
+    useEffect(() => {
+        if (!isEditing.current) {
+            setDraft(String(value));
+        }
+    }, [value]);
+
+    const commitDraft = () => {
+        isEditing.current = false;
+        const clamped = clampSliderValue(draft, { min, max, step });
+        onChange(clamped);
+        setDraft(String(clamped));
+    };
+
+    return (
+        <View style={styles.field}>
+            <View style={styles.sliderHeader}>
+                <Text style={styles.fieldLabel}>{label}</Text>
+                <View style={styles.sliderInputRow}>
+                    <View style={[styles.fieldInput, styles.sliderValueInput]}>
+                        <TextInput
+                            style={styles.sliderTextInput}
+                            keyboardType="decimal-pad"
+                            inputMode="decimal"
+                            value={draft}
+                            onFocus={() => {
+                                isEditing.current = true;
+                            }}
+                            onBlur={commitDraft}
+                            onSubmitEditing={commitDraft}
+                            onChangeText={setDraft}
+                        />
+                        {suffix ? <Text style={styles.fieldSuffix}>{suffix}</Text> : null}
+                    </View>
+                    {gramsLabel ? <Text style={styles.sliderGrams}>({gramsLabel})</Text> : null}
+                </View>
+            </View>
+            <Slider
+                style={styles.slider}
+                minimumValue={min}
+                maximumValue={max}
+                step={step}
+                value={Number(value)}
+                onValueChange={(next) => {
+                    isEditing.current = false;
+                    onChange(next);
+                    setDraft(String(next));
+                }}
+                minimumTrackTintColor="#7a3e12"
+                maximumTrackTintColor="#e2d3c0"
+                thumbTintColor="#7a3e12"
+            />
+            <View style={styles.sliderBounds}>
+                <Text style={styles.sliderBound}>{min}{suffix}</Text>
+                <Text style={styles.sliderBound}>{max}{suffix}</Text>
+            </View>
         </View>
-        <Slider
-            style={styles.slider}
-            minimumValue={min}
-            maximumValue={max}
-            step={step}
-            value={Number(value)}
-            onValueChange={onChange}
-            minimumTrackTintColor="#7a3e12"
-            maximumTrackTintColor="#e2d3c0"
-            thumbTintColor="#7a3e12"
-        />
-        <View style={styles.sliderBounds}>
-            <Text style={styles.sliderBound}>{min}{suffix}</Text>
-            <Text style={styles.sliderBound}>{max}{suffix}</Text>
-        </View>
-    </View>
-);
+    );
+};
 
 const RecipeRow = ({ ingredient, percent, grams, isTotal }) => (
     <View style={[styles.row, isTotal && styles.totalRow]}>
@@ -1384,8 +1419,29 @@ const styles = StyleSheet.create({
     sliderHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'baseline',
+        alignItems: 'flex-start',
         marginBottom: 4,
+        gap: 12,
+    },
+    sliderInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flexShrink: 0,
+    },
+    sliderValueInput: {
+        width: 96,
+        flex: 0,
+    },
+    sliderTextInput: {
+        flex: 1,
+        paddingVertical: 8,
+        paddingHorizontal: 10,
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#7a3e12',
+        fontVariant: ['tabular-nums'],
+        textAlign: 'right',
     },
     sliderValue: {
         fontSize: 16,
