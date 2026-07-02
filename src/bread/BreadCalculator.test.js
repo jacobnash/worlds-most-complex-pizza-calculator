@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
-import BreadCalculator, { computeRecipe, LEAVENINGS } from './BreadCalculator';
+import BreadCalculator, { computeRecipe, computeTiming, formatDuration, LEAVENINGS } from './BreadCalculator';
 
 describe('computeRecipe (baker\'s percentages)', () => {
   test('solves flour from the target dough weight and derives the rest', () => {
@@ -44,6 +44,43 @@ describe('computeRecipe (baker\'s percentages)', () => {
   });
 });
 
+describe('computeTiming (fermentation time)', () => {
+  test('more yeast means a shorter bulk ferment', () => {
+    const less = computeTiming({ leaveningType: 'Instant Yeast', leavening: 0.25, temperature: 24 });
+    const more = computeTiming({ leaveningType: 'Instant Yeast', leavening: 1, temperature: 24 });
+    expect(more.bulkHours).toBeLessThan(less.bulkHours);
+    // Instant yeast at 1% and 24°C is the ~2h reference point.
+    expect(more.bulkHours).toBeCloseTo(2);
+  });
+
+  test('cake yeast ferments like instant yeast at ~3x the dose (same power)', () => {
+    const instant = computeTiming({ leaveningType: 'Instant Yeast', leavening: 0.5, temperature: 24 });
+    const cake = computeTiming({ leaveningType: 'Cake Yeast', leavening: 1.5, temperature: 24 });
+    expect(cake.bulkHours).toBeCloseTo(instant.bulkHours);
+  });
+
+  test('warmer dough ferments faster (Q10 ~ 2 per 10°C)', () => {
+    const cool = computeTiming({ leaveningType: 'Instant Yeast', leavening: 1, temperature: 24 });
+    const warm = computeTiming({ leaveningType: 'Instant Yeast', leavening: 1, temperature: 34 });
+    expect(warm.bulkHours).toBeCloseTo(cool.bulkHours / 2);
+  });
+
+  test('more sourdough starter shortens the bulk ferment', () => {
+    const less = computeTiming({ leaveningType: 'Sourdough Starter', leavening: 10, temperature: 24 });
+    const more = computeTiming({ leaveningType: 'Sourdough Starter', leavening: 20, temperature: 24 });
+    expect(more.bulkHours).toBeLessThan(less.bulkHours);
+  });
+});
+
+describe('formatDuration', () => {
+  test('formats hours and minutes', () => {
+    expect(formatDuration(2)).toBe('2 h');
+    expect(formatDuration(2.5)).toBe('2 h 30 min');
+    expect(formatDuration(0.5)).toBe('30 min');
+    expect(formatDuration(0)).toBe('—');
+  });
+});
+
 describe('BreadCalculator', () => {
   test('renders the calculator heading and a flour row', () => {
     render(<BreadCalculator />);
@@ -55,5 +92,12 @@ describe('BreadCalculator', () => {
     render(<BreadCalculator />);
     // The leavening row is labelled with the selected leavening type.
     expect(screen.getAllByText('Sourdough Starter').length).toBeGreaterThan(0);
+  });
+
+  test('shows the method steps and timing', () => {
+    render(<BreadCalculator />);
+    expect(screen.getByText('Method')).toBeTruthy();
+    expect(screen.getByText('Bulk ferment')).toBeTruthy();
+    expect(screen.getByText('Total rise')).toBeTruthy();
   });
 });

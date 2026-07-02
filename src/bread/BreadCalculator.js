@@ -16,10 +16,80 @@ import { Picker } from '@react-native-picker/picker';
 // starter is dosed much higher and, because it is itself flour + water, it
 // contributes both back to the dough — so we track that to report the *true*
 // hydration.
+// `powerPerPercent` is the leavening power of each type relative to instant
+// yeast, per 1% of flour. Cake (fresh) yeast is ~1/3 as strong by weight, which
+// is why its default dose is ~3x. This drives the fermentation-time estimate.
 export const LEAVENINGS = {
     'Sourdough Starter': { defaultPercent: 20, contributesToDough: true, starterHydration: 100 },
-    'Instant Yeast': { defaultPercent: 0.5, contributesToDough: false },
-    'Cake Yeast': { defaultPercent: 1.5, contributesToDough: false },
+    'Instant Yeast': { defaultPercent: 0.5, contributesToDough: false, powerPerPercent: 1 },
+    'Cake Yeast': { defaultPercent: 1.5, contributesToDough: false, powerPerPercent: 1 / 3 },
+};
+
+// Reference conditions for the (rough) fermentation-time model.
+const REFERENCE_TEMP_C = 24; // ~75°F, typical room temperature
+const REFERENCE_YEAST_BULK_HOURS = 2; // 1% instant yeast at 24°C ≈ 2h bulk
+const PROOF_TO_BULK_RATIO = 0.6; // final proof runs shorter than the bulk rise
+
+// Fermentation is faster with more (or stronger) leavening and warmer dough.
+// Temperature uses a Q10 of ~2: every 10°C below the 24°C reference roughly
+// doubles the time (and every 10°C above roughly halves it). These are
+// deliberately rough estimates meant as a starting point, not gospel.
+export const computeTiming = ({ leaveningType = 'Instant Yeast', leavening, temperature = REFERENCE_TEMP_C }) => {
+    const percent = Number(leavening);
+    const temp = Number(temperature);
+    const spec = LEAVENINGS[leaveningType] || {};
+    const tempFactor = 2 ** ((REFERENCE_TEMP_C - temp) / 10);
+
+    let bulkHours = 0;
+    if (percent > 0) {
+        if (spec.contributesToDough) {
+            // Sourdough: doubling the starter roughly halves the bulk rise
+            // (20% starter ≈ 5h at 24°C).
+            bulkHours = (100 / percent) * tempFactor;
+        } else {
+            // Commercial yeast, normalised to instant-yeast power.
+            const power = percent * (spec.powerPerPercent ?? 1);
+            bulkHours = (REFERENCE_YEAST_BULK_HOURS / power) * tempFactor;
+        }
+    }
+
+    const proofHours = bulkHours * PROOF_TO_BULK_RATIO;
+    return {
+        bulkHours,
+        proofHours,
+        totalHours: bulkHours + proofHours,
+    };
+};
+
+// Format a duration in hours as e.g. "4 h 30 min".
+export const formatDuration = (hours) => {
+    if (!Number.isFinite(hours) || hours <= 0) {
+        return '—';
+    }
+    const totalMinutes = Math.round(hours * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    if (h === 0) {
+        return `${m} min`;
+    }
+    if (m === 0) {
+        return `${h} h`;
+    }
+    return `${h} h ${m} min`;
+};
+
+// Build a simple step-by-step method for the current dough, weaving in the
+// estimated bulk/proof times.
+export const buildMethod = ({ leaveningType, timing, temperature, units, unitLabel }) => {
+    const leavening = leaveningType.toLowerCase();
+    return [
+        'Mix the flour and water until no dry flour remains, then rest 20 min (autolyse).',
+        `Add the salt and ${leavening}; mix or knead until the dough is smooth.`,
+        `Bulk ferment about ${formatDuration(timing.bulkHours)} at ${Number(temperature)}°C, with a few stretch-and-folds in the first hour.`,
+        `Divide and shape into ${Number(units)} ${unitLabel}.`,
+        `Proof about ${formatDuration(timing.proofHours)}, until visibly puffy.`,
+        'Bake hot (with steam for bread; a blazing oven or stone for pizza) until deep golden.',
+    ];
 };
 
 export const PRESETS = {
@@ -118,6 +188,7 @@ const BreadCalculator = () => {
     const [leaveningType, setLeaveningType] = useState(preset.leaveningType);
     const [units, setUnits] = useState(preset.units);
     const [unitWeight, setUnitWeight] = useState(preset.unitWeight);
+    const [temperature, setTemperature] = useState(REFERENCE_TEMP_C);
 
     const applyPreset = (name) => {
         const next = PRESETS[name];
@@ -142,6 +213,16 @@ const BreadCalculator = () => {
     const recipe = useMemo(
         () => computeRecipe({ totalWeight, hydration, salt, leavening, leaveningType }),
         [totalWeight, hydration, salt, leavening, leaveningType]
+    );
+
+    const timing = useMemo(
+        () => computeTiming({ leaveningType, leavening, temperature }),
+        [leaveningType, leavening, temperature]
+    );
+
+    const method = useMemo(
+        () => buildMethod({ leaveningType, timing, temperature, units, unitLabel: preset.unitLabel }),
+        [leaveningType, timing, temperature, units, preset.unitLabel]
     );
 
     return (
@@ -199,6 +280,7 @@ const BreadCalculator = () => {
                         </View>
 
                         <NumberField label={`${leaveningType} amount`} suffix="%" value={leavening} onChange={setLeavening} />
+                        <NumberField label="Dough temperature" suffix="°C" value={temperature} onChange={setTemperature} />
 
                         <Text style={styles.totalTarget}>
                             Target dough weight: <Text style={styles.totalTargetStrong}>{round(totalWeight)} g</Text>
@@ -226,7 +308,35 @@ const BreadCalculator = () => {
                                 ({recipe.totalWater} g water / {recipe.totalFlour} g flour).
                             </Text>
                         ) : null}
+
+                        <Text style={styles.timingTitle}>Estimated timing at {round(Number(temperature), 0)}°C</Text>
+                        <View style={styles.timingRow}>
+                            <Text style={styles.timingLabel}>Bulk ferment</Text>
+                            <Text style={styles.timingValue}>{formatDuration(timing.bulkHours)}</Text>
+                        </View>
+                        <View style={styles.timingRow}>
+                            <Text style={styles.timingLabel}>Final proof</Text>
+                            <Text style={styles.timingValue}>{formatDuration(timing.proofHours)}</Text>
+                        </View>
+                        <View style={[styles.timingRow, styles.timingTotalRow]}>
+                            <Text style={[styles.timingLabel, styles.totalText]}>Total rise</Text>
+                            <Text style={[styles.timingValue, styles.totalText]}>{formatDuration(timing.totalHours)}</Text>
+                        </View>
+                        <Text style={styles.note}>
+                            More (or stronger) leavening and warmer dough ferment faster — these are rough estimates,
+                            so watch the dough, not the clock.
+                        </Text>
                     </View>
+                </View>
+
+                <View style={[styles.panel, styles.methodPanel]}>
+                    <Text style={styles.panelTitle}>Method</Text>
+                    {method.map((step, index) => (
+                        <View key={index} style={styles.methodStep}>
+                            <Text style={styles.methodNumber}>{index + 1}</Text>
+                            <Text style={styles.methodText}>{step}</Text>
+                        </View>
+                    ))}
                 </View>
             </View>
         </ScrollView>
@@ -391,6 +501,63 @@ const styles = StyleSheet.create({
     noteStrong: {
         color: '#7a3e12',
         fontWeight: '700',
+    },
+    timingTitle: {
+        marginTop: 20,
+        marginBottom: 8,
+        fontSize: 13,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        color: '#a08b74',
+    },
+    timingRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: '#efe3d4',
+    },
+    timingTotalRow: {
+        borderBottomWidth: 0,
+        borderTopWidth: 2,
+        borderTopColor: '#e2d3c0',
+    },
+    timingLabel: {
+        fontSize: 15,
+        color: '#5c4a38',
+    },
+    timingValue: {
+        fontSize: 15,
+        color: '#2b2118',
+        fontVariant: ['tabular-nums'],
+    },
+    methodPanel: {
+        flexBasis: '100%',
+        marginTop: 16,
+    },
+    methodStep: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
+    methodNumber: {
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        backgroundColor: '#7a3e12',
+        color: '#fff',
+        textAlign: 'center',
+        lineHeight: 26,
+        fontWeight: '700',
+        marginRight: 12,
+        overflow: 'hidden',
+    },
+    methodText: {
+        flex: 1,
+        fontSize: 15,
+        lineHeight: 22,
+        color: '#2b2118',
     },
 });
 
