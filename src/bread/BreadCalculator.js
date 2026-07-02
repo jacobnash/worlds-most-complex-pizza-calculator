@@ -31,6 +31,9 @@ export const LEAVENINGS = {
 const REFERENCE_TEMP_C = 24; // ~75°F, typical room temperature
 const REFERENCE_YEAST_BULK_HOURS = 2; // 1% instant yeast at 24°C ≈ 2h bulk
 const PROOF_TO_BULK_RATIO = 0.6; // final proof runs shorter than the bulk rise
+// 1:1:1 levain (seed is ~⅓ of the build) at 24°C peaks in about this long.
+const REFERENCE_LEVAIN_INOCULUM_PERCENT = 100 / 3;
+const REFERENCE_LEVAIN_PEAK_HOURS = 5;
 
 // Fermentation is faster with more (or stronger) leavening and warmer dough.
 // Temperature uses a Q10 of ~2: every 10°C below the 24°C reference roughly
@@ -150,6 +153,164 @@ export const computeRecipe = ({ totalWeight, hydration, salt, leavening, leaveni
     };
 };
 
+// When you feed the mother: keep a small seed, add flour + water to a target jar
+// weight. The rest of the ripe starter (jar minus seed) is discard — often used
+// in the same bake.
+export const computeStarterFeed = ({
+    seedWeight,
+    targetTotal,
+    starterHydration = 100,
+}) => {
+    const seed = Number(seedWeight);
+    const target = Number(targetTotal);
+    const hydration = Number(starterHydration);
+
+    if (!Number.isFinite(seed) || !Number.isFinite(target) || seed <= 0 || target <= seed) {
+        return null;
+    }
+
+    const flourTotal = target / (1 + hydration / 100);
+    const waterTotal = target - flourTotal;
+    const seedFlour = seed / (1 + hydration / 100);
+    const seedWater = seed - seedFlour;
+
+    return {
+        seedWeight: round(seed),
+        targetTotal: round(target),
+        addFlour: round(flourTotal - seedFlour, 1),
+        addWater: round(waterTotal - seedWater, 1),
+        addTotal: round(target - seed),
+        inoculumPercent: round((seed / target) * 100, 1),
+    };
+};
+
+// Rough peak time for a starter build from seed weight and final target mass.
+// More seed in the mix (higher inoculum) peaks sooner; warmer starter peaks sooner.
+export const computeLevainPeakHours = ({
+    seedWeight,
+    targetTotal,
+    temperature = REFERENCE_TEMP_C,
+}) => {
+    const seed = Number(seedWeight);
+    const target = Number(targetTotal);
+    const temp = Number(temperature);
+
+    if (!Number.isFinite(seed) || !Number.isFinite(target) || seed <= 0 || target <= seed) {
+        return 0;
+    }
+
+    const inoculumPercent = (seed / target) * 100;
+    const tempFactor = 2 ** ((REFERENCE_TEMP_C - temp) / 10);
+    return (REFERENCE_LEVAIN_INOCULUM_PERCENT / inoculumPercent) * REFERENCE_LEVAIN_PEAK_HOURS * tempFactor;
+};
+
+export const computeStarterPlan = ({
+    jarWeight,
+    seedKept,
+    targetTotal,
+    starterHydration = 100,
+    doughStarterNeed = 0,
+    discardOnHand,
+    temperature = REFERENCE_TEMP_C,
+}) => {
+    const jar = Number(jarWeight);
+    const seed = Number(seedKept);
+    const need = Number(doughStarterNeed);
+    const temp = Number(temperature);
+    const discard =
+        discardOnHand === undefined || discardOnHand === null || discardOnHand === ''
+            ? jar - seed
+            : Number(discardOnHand);
+
+    if (
+        !Number.isFinite(jar) ||
+        !Number.isFinite(seed) ||
+        !Number.isFinite(discard) ||
+        jar <= 0 ||
+        seed <= 0 ||
+        jar < seed ||
+        discard < 0
+    ) {
+        return null;
+    }
+
+    const motherFeed = computeStarterFeed({ seedWeight: seed, targetTotal, starterHydration });
+    if (!motherFeed) {
+        return null;
+    }
+
+    const jarDiscard = jar - seed;
+    const useFromDiscard = Math.min(need, Math.max(0, discard));
+    const shortfall = round(Math.max(0, need - useFromDiscard), 1);
+    const surplus = round(Math.max(0, discard - useFromDiscard), 1);
+    const coversDough = shortfall === 0;
+
+    let doughStarter = null;
+    if (coversDough) {
+        doughStarter = {
+            strategy: 'discard',
+            useFromDiscard: round(useFromDiscard, 1),
+            useFromSeed: 0,
+            seedWeight: 0,
+            targetTotal: round(need, 1),
+            addFlour: 0,
+            addWater: 0,
+            addTotal: 0,
+            inoculumPercent: 100,
+            peakHours: 0,
+        };
+    } else if (shortfall > seed) {
+        const levainBuild = computeStarterFeed({
+            seedWeight: seed,
+            targetTotal: shortfall,
+            starterHydration,
+        });
+        doughStarter = {
+            strategy: useFromDiscard > 0 ? 'partial' : 'build',
+            useFromDiscard: round(useFromDiscard, 1),
+            useFromSeed: 0,
+            peakHours: computeLevainPeakHours({ seedWeight: seed, targetTotal: shortfall, temperature: temp }),
+            ...levainBuild,
+        };
+    } else if (shortfall > 0) {
+        doughStarter = {
+            strategy: 'partial',
+            useFromDiscard: round(useFromDiscard, 1),
+            useFromSeed: shortfall,
+            seedWeight: 0,
+            targetTotal: shortfall,
+            addFlour: 0,
+            addWater: 0,
+            addTotal: 0,
+            inoculumPercent: 100,
+            peakHours: 0,
+        };
+    }
+
+    const motherPeakHours = computeLevainPeakHours({
+        seedWeight: seed,
+        targetTotal,
+        temperature: temp,
+    });
+
+    return {
+        jarWeight: round(jar),
+        jarDiscard: round(jarDiscard),
+        discardOnHand: round(discard),
+        discardAvailable: round(discard),
+        doughStarterNeed: round(need, 1),
+        surplus,
+        shortfall,
+        coversDough,
+        doughStarter,
+        motherFeed: {
+            ...motherFeed,
+            peakHours: motherPeakHours,
+        },
+        readyInHours: doughStarter?.peakHours ?? 0,
+    };
+};
+
 const capitalize = (text) => text.replace(/^\w/, (c) => c.toUpperCase());
 
 const NumberField = ({ label, suffix, value, onChange }) => (
@@ -193,6 +354,10 @@ const BreadCalculator = () => {
     const [units, setUnits] = useState(preset.units);
     const [unitWeight, setUnitWeight] = useState(preset.unitWeight);
     const [temperature, setTemperature] = useState(REFERENCE_TEMP_C);
+    const [starterJarWeight, setStarterJarWeight] = useState(200);
+    const [starterSeedKept, setStarterSeedKept] = useState(25);
+    const [starterFeedTarget, setStarterFeedTarget] = useState(200);
+    const [starterDiscardOnHand, setStarterDiscardOnHand] = useState(175);
 
     const applyPreset = (name) => {
         const next = PRESETS[name];
@@ -228,6 +393,31 @@ const BreadCalculator = () => {
         () => buildMethod({ leaveningType, timing, temperature, units, unitLabel: preset.unitLabel }),
         [leaveningType, timing, temperature, units, preset.unitLabel]
     );
+
+    const starterHydration = LEAVENINGS[leaveningType]?.starterHydration ?? 100;
+    const starterPlan = useMemo(() => {
+        if (!recipe.contributesToDough) {
+            return null;
+        }
+        return computeStarterPlan({
+            jarWeight: starterJarWeight,
+            seedKept: starterSeedKept,
+            targetTotal: starterFeedTarget,
+            starterHydration,
+            doughStarterNeed: recipe.leavening,
+            discardOnHand: starterDiscardOnHand,
+            temperature,
+        });
+    }, [
+        recipe.contributesToDough,
+        recipe.leavening,
+        starterJarWeight,
+        starterSeedKept,
+        starterFeedTarget,
+        starterDiscardOnHand,
+        starterHydration,
+        temperature,
+    ]);
 
     return (
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -311,6 +501,207 @@ const BreadCalculator = () => {
                                 <Text style={styles.noteStrong}>{recipe.trueHydration}%</Text>{' '}
                                 ({recipe.totalWater} g water / {recipe.totalFlour} g flour).
                             </Text>
+                        ) : null}
+
+                        {starterPlan ? (
+                            <View style={styles.starterSection}>
+                                <Text style={styles.starterTitle}>Feed &amp; bake</Text>
+                                <Text style={styles.starterIntro}>
+                                    How much ripe starter you have for the dough, plus jar maintenance after baking.
+                                </Text>
+                                <NumberField
+                                    label="Discard on hand"
+                                    suffix="g"
+                                    value={starterDiscardOnHand}
+                                    onChange={setStarterDiscardOnHand}
+                                />
+                                <Text style={styles.starterHint}>
+                                    Ripe starter ready to go into the dough (jar − seed is often{' '}
+                                    {round(Number(starterJarWeight) - Number(starterSeedKept))} g).
+                                </Text>
+                                <View style={styles.fieldRow}>
+                                    <View style={styles.fieldRowItem}>
+                                        <NumberField
+                                            label="Jar before feed"
+                                            suffix="g"
+                                            value={starterJarWeight}
+                                            onChange={setStarterJarWeight}
+                                        />
+                                    </View>
+                                    <View style={styles.fieldRowItem}>
+                                        <NumberField
+                                            label="Seed kept"
+                                            suffix="g"
+                                            value={starterSeedKept}
+                                            onChange={setStarterSeedKept}
+                                        />
+                                    </View>
+                                </View>
+                                <NumberField
+                                    label="Feed to"
+                                    suffix="g"
+                                    value={starterFeedTarget}
+                                    onChange={setStarterFeedTarget}
+                                />
+
+                                {starterPlan.doughStarter ? (
+                                    <>
+                                        <Text style={styles.starterSubtitle}>Starter for this dough</Text>
+                                        <View style={styles.starterRow}>
+                                            <Text style={styles.starterLabel}>Need</Text>
+                                            <Text style={styles.starterValue}>{starterPlan.doughStarterNeed} g</Text>
+                                        </View>
+                                        {starterPlan.doughStarter.strategy === 'discard' ? (
+                                            <>
+                                                <View style={styles.starterRow}>
+                                                    <Text style={styles.starterLabel}>Use from discard</Text>
+                                                    <Text style={styles.starterValue}>
+                                                        {starterPlan.doughStarter.useFromDiscard} g
+                                                    </Text>
+                                                </View>
+                                                <View style={styles.starterRow}>
+                                                    <Text style={styles.starterLabel}>Ready in</Text>
+                                                    <Text style={styles.starterValue}>Now (ripe discard)</Text>
+                                                </View>
+                                            </>
+                                        ) : starterPlan.doughStarter.strategy === 'partial' ? (
+                                            <>
+                                                {starterPlan.doughStarter.useFromDiscard > 0 ? (
+                                                    <View style={styles.starterRow}>
+                                                        <Text style={styles.starterLabel}>Use from discard</Text>
+                                                        <Text style={styles.starterValue}>
+                                                            {starterPlan.doughStarter.useFromDiscard} g (now)
+                                                        </Text>
+                                                    </View>
+                                                ) : null}
+                                                {starterPlan.doughStarter.useFromSeed > 0 ? (
+                                                    <View style={styles.starterRow}>
+                                                        <Text style={styles.starterLabel}>Use from seed</Text>
+                                                        <Text style={styles.starterValue}>
+                                                            {starterPlan.doughStarter.useFromSeed} g (ripe)
+                                                        </Text>
+                                                    </View>
+                                                ) : null}
+                                                {starterPlan.doughStarter.seedWeight > 0 ? (
+                                                    <>
+                                                        <View style={styles.starterRow}>
+                                                            <Text style={styles.starterLabel}>Build from seed</Text>
+                                                            <Text style={styles.starterValue}>
+                                                                {starterPlan.doughStarter.seedWeight} g
+                                                            </Text>
+                                                        </View>
+                                                        <View style={styles.starterRow}>
+                                                            <Text style={styles.starterLabel}>Add</Text>
+                                                            <Text style={styles.starterValue}>
+                                                                {starterPlan.doughStarter.addFlour} g flour +{' '}
+                                                                {starterPlan.doughStarter.addWater} g water
+                                                            </Text>
+                                                        </View>
+                                                        <View style={styles.starterRow}>
+                                                            <Text style={styles.starterLabel}>Build to</Text>
+                                                            <Text style={styles.starterValue}>
+                                                                {starterPlan.doughStarter.targetTotal} g
+                                                            </Text>
+                                                        </View>
+                                                        <View style={styles.starterRow}>
+                                                            <Text style={styles.starterLabel}>Peak in</Text>
+                                                            <Text style={styles.starterValue}>
+                                                                {formatDuration(starterPlan.doughStarter.peakHours)} at{' '}
+                                                                {round(Number(temperature), 0)}°C
+                                                            </Text>
+                                                        </View>
+                                                    </>
+                                                ) : null}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <View style={styles.starterRow}>
+                                                    <Text style={styles.starterLabel}>Build from seed</Text>
+                                                    <Text style={styles.starterValue}>
+                                                        {starterPlan.doughStarter.seedWeight} g
+                                                    </Text>
+                                                </View>
+                                                <View style={styles.starterRow}>
+                                                    <Text style={styles.starterLabel}>Add</Text>
+                                                    <Text style={styles.starterValue}>
+                                                        {starterPlan.doughStarter.addFlour} g flour +{' '}
+                                                        {starterPlan.doughStarter.addWater} g water
+                                                    </Text>
+                                                </View>
+                                                <View style={styles.starterRow}>
+                                                    <Text style={styles.starterLabel}>Build to</Text>
+                                                    <Text style={styles.starterValue}>
+                                                        {starterPlan.doughStarter.targetTotal} g
+                                                    </Text>
+                                                </View>
+                                                <View style={styles.starterRow}>
+                                                    <Text style={styles.starterLabel}>Peak in</Text>
+                                                    <Text style={styles.starterValue}>
+                                                        {formatDuration(starterPlan.doughStarter.peakHours)} at{' '}
+                                                        {round(Number(temperature), 0)}°C
+                                                    </Text>
+                                                </View>
+                                            </>
+                                        )}
+                                    </>
+                                ) : (
+                                    <Text style={styles.note}>
+                                        Short {starterPlan.shortfall} g starter for this dough — scale down, use a
+                                        larger jar, or lower the starter percentage.
+                                    </Text>
+                                )}
+
+                                <Text style={styles.starterSubtitle}>Refresh the jar</Text>
+                                <View style={styles.starterRow}>
+                                    <Text style={styles.starterLabel}>Add to seed</Text>
+                                    <Text style={styles.starterValue}>
+                                        {starterPlan.motherFeed.addFlour} g flour +{' '}
+                                        {starterPlan.motherFeed.addWater} g water
+                                    </Text>
+                                </View>
+                                <View style={styles.starterRow}>
+                                    <Text style={styles.starterLabel}>Jar peaks in</Text>
+                                    <Text style={styles.starterValue}>
+                                        {formatDuration(starterPlan.motherFeed.peakHours)} at{' '}
+                                        {round(Number(temperature), 0)}°C
+                                    </Text>
+                                </View>
+
+                                <Text style={styles.note}>
+                                    {starterPlan.coversDough ? (
+                                        <>
+                                            Use {starterPlan.doughStarter.useFromDiscard} g discard for the dough,
+                                            then keep {starterPlan.motherFeed.seedWeight} g and feed the jar to{' '}
+                                            {starterPlan.motherFeed.targetTotal} g
+                                            {starterPlan.surplus > 0
+                                                ? ` (${starterPlan.surplus} g discard left over).`
+                                                : '.'}{' '}
+                                            Mix dough now, then allow {formatDuration(timing.totalHours)} rise.
+                                        </>
+                                    ) : starterPlan.doughStarter?.strategy === 'partial' ? (
+                                        <>
+                                            {starterPlan.doughStarter.useFromDiscard > 0
+                                                ? `Use ${starterPlan.doughStarter.useFromDiscard} g discard now`
+                                                : 'Start the levain'}
+                                            {starterPlan.doughStarter.seedWeight > 0
+                                                ? ` and build ${starterPlan.doughStarter.targetTotal} g more (~${formatDuration(starterPlan.doughStarter.peakHours)})`
+                                                : starterPlan.doughStarter.useFromSeed > 0
+                                                  ? ` plus ${starterPlan.doughStarter.useFromSeed} g from your seed stock`
+                                                  : ''}
+                                            . About {formatDuration(starterPlan.readyInHours + timing.totalHours)} until
+                                            bake, then refresh the jar.
+                                        </>
+                                    ) : starterPlan.doughStarter ? (
+                                        <>
+                                            Build {starterPlan.doughStarter.targetTotal} g levain first (~
+                                            {formatDuration(starterPlan.doughStarter.peakHours)}), mix the dough, then
+                                            feed the jar on the side. About{' '}
+                                            {formatDuration(starterPlan.readyInHours + timing.totalHours)} until bake
+                                            after you start the levain.
+                                        </>
+                                    ) : null}
+                                </Text>
+                            </View>
                         ) : null}
 
                         <Text style={styles.timingTitle}>Estimated timing at {round(Number(temperature), 0)}°C</Text>
@@ -518,6 +909,60 @@ const styles = StyleSheet.create({
     noteStrong: {
         color: '#7a3e12',
         fontWeight: '700',
+    },
+    starterSection: {
+        marginTop: 20,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#e2d3c0',
+    },
+    starterTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        color: '#a08b74',
+        marginBottom: 6,
+    },
+    starterIntro: {
+        fontSize: 13,
+        lineHeight: 19,
+        color: '#8a7b6b',
+        marginBottom: 12,
+    },
+    starterHint: {
+        marginTop: -8,
+        marginBottom: 12,
+        fontSize: 12,
+        lineHeight: 17,
+        color: '#a08b74',
+    },
+    starterSubtitle: {
+        marginTop: 16,
+        marginBottom: 4,
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#5c4a38',
+    },
+    starterRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: '#efe3d4',
+    },
+    starterLabel: {
+        fontSize: 15,
+        color: '#5c4a38',
+        flex: 1,
+        paddingRight: 8,
+    },
+    starterValue: {
+        fontSize: 15,
+        color: '#2b2118',
+        fontVariant: ['tabular-nums'],
+        textAlign: 'right',
+        flexShrink: 1,
     },
     timingTitle: {
         marginTop: 20,

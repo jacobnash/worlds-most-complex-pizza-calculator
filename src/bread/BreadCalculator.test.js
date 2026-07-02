@@ -1,6 +1,15 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
-import BreadCalculator, { computeRecipe, computeTiming, formatDuration, LEAVENINGS, PRESETS } from './BreadCalculator';
+import BreadCalculator, {
+  computeRecipe,
+  computeStarterFeed,
+  computeStarterPlan,
+  computeLevainPeakHours,
+  computeTiming,
+  formatDuration,
+  LEAVENINGS,
+  PRESETS,
+} from './BreadCalculator';
 
 describe('computeRecipe (baker\'s percentages)', () => {
   test('solves flour from the target dough weight and derives the rest', () => {
@@ -41,6 +50,100 @@ describe('computeRecipe (baker\'s percentages)', () => {
 
   test('cake yeast default dose is ~3x instant yeast', () => {
     expect(LEAVENINGS['Cake Yeast'].defaultPercent).toBeCloseTo(LEAVENINGS['Instant Yeast'].defaultPercent * 3);
+  });
+});
+
+describe('computeStarterFeed', () => {
+  test('feeds 25 g seed back to 200 g at 100% hydration', () => {
+    const feed = computeStarterFeed({ seedWeight: 25, targetTotal: 200, starterHydration: 100 });
+    expect(feed).toMatchObject({
+      seedWeight: 25,
+      targetTotal: 200,
+      addFlour: 87.5,
+      addWater: 87.5,
+      addTotal: 175,
+      inoculumPercent: 12.5,
+    });
+  });
+});
+
+describe('computeLevainPeakHours', () => {
+  test('1:1:1 build peaks in about 5 h at 24°C', () => {
+    const hours = computeLevainPeakHours({ seedWeight: 33, targetTotal: 99, temperature: 24 });
+    expect(hours).toBeCloseTo(5);
+  });
+
+  test('a smaller seed share takes longer to peak', () => {
+    const fast = computeLevainPeakHours({ seedWeight: 33, targetTotal: 99, temperature: 24 });
+    const slow = computeLevainPeakHours({ seedWeight: 25, targetTotal: 125, temperature: 24 });
+    expect(slow).toBeGreaterThan(fast);
+  });
+});
+
+describe('computeStarterPlan', () => {
+  test('matches a 200 g jar with 25 g kept and enough discard for country sourdough', () => {
+    const recipe = computeRecipe({
+      totalWeight: 900,
+      hydration: 72,
+      salt: 2,
+      leavening: 20,
+      leaveningType: 'Sourdough Starter',
+    });
+    const plan = computeStarterPlan({
+      jarWeight: 200,
+      seedKept: 25,
+      targetTotal: 200,
+      doughStarterNeed: recipe.leavening,
+      discardOnHand: 175,
+      temperature: 24,
+    });
+    expect(plan.discardOnHand).toBe(175);
+    expect(plan.coversDough).toBe(true);
+    expect(plan.shortfall).toBe(0);
+    expect(plan.surplus).toBeGreaterThan(0);
+    expect(plan.doughStarter.strategy).toBe('discard');
+    expect(plan.doughStarter.peakHours).toBe(0);
+    expect(plan.motherFeed.peakHours).toBeGreaterThan(plan.doughStarter.peakHours);
+  });
+
+  test('uses the discard on hand you specify instead of assuming a full jar', () => {
+    const recipe = computeRecipe({
+      totalWeight: 900,
+      hydration: 72,
+      salt: 2,
+      leavening: 40,
+      leaveningType: 'Sourdough Starter',
+    });
+    const plan = computeStarterPlan({
+      jarWeight: 200,
+      seedKept: 25,
+      targetTotal: 200,
+      doughStarterNeed: recipe.leavening,
+      discardOnHand: 100,
+      temperature: 24,
+    });
+    expect(plan.discardOnHand).toBe(100);
+    expect(plan.coversDough).toBe(false);
+    expect(plan.doughStarter.strategy).toBe('partial');
+    expect(plan.doughStarter.useFromDiscard).toBe(100);
+    expect(plan.doughStarter.targetTotal).toBeGreaterThan(0);
+    expect(plan.doughStarter.peakHours).toBeGreaterThan(0);
+  });
+
+  test('builds a levain when there is no discard on hand', () => {
+    const plan = computeStarterPlan({
+      jarWeight: 200,
+      seedKept: 25,
+      targetTotal: 200,
+      doughStarterNeed: 250,
+      discardOnHand: 0,
+      temperature: 24,
+    });
+    expect(plan.coversDough).toBe(false);
+    expect(plan.doughStarter.strategy).toBe('build');
+    expect(plan.doughStarter.useFromDiscard).toBe(0);
+    expect(plan.doughStarter.targetTotal).toBe(250);
+    expect(plan.doughStarter.peakHours).toBeGreaterThan(0);
   });
 });
 
@@ -107,6 +210,9 @@ describe('BreadCalculator', () => {
     render(<BreadCalculator />);
     // The leavening row is labelled with the selected leavening type.
     expect(screen.getAllByText('Sourdough Starter').length).toBeGreaterThan(0);
+    expect(screen.getByText('Feed & bake')).toBeTruthy();
+    expect(screen.getByText('Discard on hand')).toBeTruthy();
+    expect(screen.getByText('Starter for this dough')).toBeTruthy();
   });
 
   test('shows the method steps and timing', () => {
