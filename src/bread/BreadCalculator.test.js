@@ -9,9 +9,12 @@ import BreadCalculator, {
   computeLevainPeakHours,
   computeTiming,
   clampLeavening,
+  clampSliderValue,
   formatDateTime,
   formatDuration,
   getLeaveningSliderRange,
+  HYDRATION_SLIDER,
+  SALT_SLIDER,
   LEAVENINGS,
   parseBakeDateTime,
   PRESETS,
@@ -21,7 +24,7 @@ import BreadCalculator, {
 jest.mock('@react-native-community/slider', () => {
   const React = require('react');
   const { View } = require('react-native');
-  const MockSlider = (props) => <View testID="leavening-slider" {...props} />;
+  const MockSlider = (props) => <View testID="slider" {...props} />;
   MockSlider.displayName = 'MockSlider';
   return MockSlider;
 });
@@ -282,6 +285,16 @@ describe('clampLeavening', () => {
   });
 });
 
+describe('clampSliderValue', () => {
+  test('clamps hydration and salt sliders', () => {
+    expect(clampSliderValue(45, HYDRATION_SLIDER)).toBe(50);
+    expect(clampSliderValue(72, HYDRATION_SLIDER)).toBe(72);
+    expect(clampSliderValue(110, HYDRATION_SLIDER)).toBe(100);
+    expect(clampSliderValue(2.23, SALT_SLIDER)).toBe(2.2);
+    expect(clampSliderValue(5, SALT_SLIDER)).toBe(4);
+  });
+});
+
 describe('formatDuration', () => {
   test('formats hours and minutes', () => {
     expect(formatDuration(2)).toBe('2 h');
@@ -311,6 +324,7 @@ describe('BreadCalculator', () => {
     render(<BreadCalculator />);
     expect(screen.getByText('Hydration Bread Calculator')).toBeTruthy();
     expect(screen.getByText('Flour')).toBeTruthy();
+    expect(screen.getAllByTestId('slider').length).toBeGreaterThanOrEqual(4);
   });
 
   test('defaults to the Country Sourdough preset using a sourdough starter', () => {

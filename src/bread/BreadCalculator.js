@@ -81,8 +81,11 @@ export const getLeaveningSliderRange = (leaveningType) => {
     };
 };
 
-export const clampLeavening = (value, leaveningType) => {
-    const { min, max, step } = getLeaveningSliderRange(leaveningType);
+export const HYDRATION_SLIDER = { min: 50, max: 100, step: 1 };
+export const SALT_SLIDER = { min: 0, max: 4, step: 0.1 };
+export const TEMPERATURE_SLIDER = { min: 15, max: 32, step: 1 };
+
+export const clampSliderValue = (value, { min, max, step }) => {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
         return min;
@@ -92,6 +95,10 @@ export const clampLeavening = (value, leaveningType) => {
     const decimals = step < 1 ? 1 : 0;
     const factor = 10 ** decimals;
     return Math.round(rounded * factor) / factor;
+};
+
+export const clampLeavening = (value, leaveningType) => {
+    return clampSliderValue(value, getLeaveningSliderRange(leaveningType));
 };
 
 // Reference conditions for the (rough) fermentation-time model.
@@ -655,6 +662,18 @@ const BreadCalculator = () => {
         setLeavening(LEAVENINGS[type].defaultPercent);
     };
 
+    const changeHydration = (value) => {
+        setHydration(clampSliderValue(value, HYDRATION_SLIDER));
+    };
+
+    const changeSalt = (value) => {
+        setSalt(clampSliderValue(value, SALT_SLIDER));
+    };
+
+    const changeTemperature = (value) => {
+        setTemperature(clampSliderValue(value, TEMPERATURE_SLIDER));
+    };
+
     const changeLeaveningAmount = (value) => {
         setLeavening(clampLeavening(value, leaveningType));
     };
@@ -768,8 +787,26 @@ const BreadCalculator = () => {
                             </View>
                         </View>
 
-                        <NumberField label="Hydration" suffix="%" value={hydration} onChange={setHydration} />
-                        <NumberField label="Salt" suffix="%" value={salt} onChange={setSalt} />
+                        <SliderField
+                            label="Hydration"
+                            suffix="%"
+                            value={hydration}
+                            min={HYDRATION_SLIDER.min}
+                            max={HYDRATION_SLIDER.max}
+                            step={HYDRATION_SLIDER.step}
+                            onChange={changeHydration}
+                            gramsLabel={`${recipe.water} g`}
+                        />
+                        <SliderField
+                            label="Salt"
+                            suffix="%"
+                            value={salt}
+                            min={SALT_SLIDER.min}
+                            max={SALT_SLIDER.max}
+                            step={SALT_SLIDER.step}
+                            onChange={changeSalt}
+                            gramsLabel={`${recipe.salt} g`}
+                        />
 
                         <View style={styles.field}>
                             <Text style={styles.fieldLabel}>Leavening</Text>
@@ -796,12 +833,20 @@ const BreadCalculator = () => {
                             onChange={changeLeaveningAmount}
                             gramsLabel={`${recipe.leavening} g`}
                         />
-                        <NumberField label="Dough temperature" suffix="°C" value={temperature} onChange={setTemperature} />
+                        <SliderField
+                            label="Dough temperature"
+                            suffix="°C"
+                            value={temperature}
+                            min={TEMPERATURE_SLIDER.min}
+                            max={TEMPERATURE_SLIDER.max}
+                            step={TEMPERATURE_SLIDER.step}
+                            onChange={changeTemperature}
+                        />
 
                         <View style={styles.scheduleSection}>
                             <Text style={styles.scheduleTitle}>Bake schedule</Text>
                             <Text style={styles.scheduleIntro}>
-                                Set when you want bread in the oven — the slider above shifts preferment timing.
+                                Set when you want bread in the oven — leavening and temperature sliders shift preferment timing.
                             </Text>
                             <View style={styles.fieldRow}>
                                 <View style={styles.fieldRowItem}>
