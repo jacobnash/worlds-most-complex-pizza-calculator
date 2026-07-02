@@ -14,6 +14,9 @@ export const NASH_ENGINEERING_URL = 'https://pizza.nash.engineering';
 // recipe (or dial in your own) after picking a preset.
 
 // Leavening types: sourdough starter, poolish, biga, and commercial yeasts.
+// Poolish and biga are flour+water preferments with a pinch of yeast in the
+// preferment itself, plus additional instant yeast in the final dough mix
+// (dosed on the remaining flour, not total flour).
 // Commercial yeasts are dosed as a tiny percentage of flour; the defaults below
 // power (fresh/cake yeast is ~3x instant, active dry ~1.25x). A sourdough
 // starter is dosed much higher and, because it is itself flour + water, it
@@ -35,7 +38,10 @@ export const LEAVENINGS = {
     Poolish: {
         defaultPercent: 20,
         contributesToDough: true,
+        isPreferment: true,
         starterHydration: 100,
+        prefermentYeastPercent: 0.1, // IDY % of preferment flour
+        targetBulkHours: 3,
         sliderMin: 10,
         sliderMax: 50,
         sliderStep: 1,
@@ -43,7 +49,10 @@ export const LEAVENINGS = {
     Biga: {
         defaultPercent: 30,
         contributesToDough: true,
+        isPreferment: true,
         starterHydration: 50,
+        prefermentYeastPercent: 0.3, // IDY % of preferment flour
+        targetBulkHours: 2.5,
         sliderMin: 10,
         sliderMax: 50,
         sliderStep: 1,
@@ -120,11 +129,15 @@ export const computeTiming = ({ leaveningType = 'Instant Yeast', leavening, temp
     const tempFactor = 2 ** ((REFERENCE_TEMP_C - temp) / 10);
 
     let bulkHours = 0;
-    if (percent > 0) {
-        if (spec.contributesToDough) {
+    if (percent > 0 || spec.isPreferment) {
+        if (spec.isSourdough) {
             // Sourdough: doubling the starter roughly halves the bulk rise
             // (20% starter ≈ 5h at 24°C).
             bulkHours = (100 / percent) * tempFactor;
+        } else if (spec.isPreferment) {
+            // Poolish/biga: bulk timing is driven by the yeast added to the
+            // final dough, not the preferment percentage.
+            bulkHours = (spec.targetBulkHours ?? 3) * tempFactor;
         } else {
             // Commercial yeast, normalised to instant-yeast power.
             const power = percent * (spec.powerPerPercent ?? 1);
@@ -150,7 +163,7 @@ export const computePrefermentPeakHours = ({
     const temp = Number(temperature);
     const spec = LEAVENINGS[leaveningType] || {};
 
-    if (!spec.contributesToDough || spec.isSourdough || percent <= 0) {
+    if (!spec.isPreferment || percent <= 0) {
         return 0;
     }
 
@@ -254,7 +267,7 @@ export const computeBakeSchedule = ({
     let prefermentHours = 0;
     if (spec.isSourdough && starterPlan) {
         prefermentHours = starterPlan.readyInHours ?? 0;
-    } else if (spec.contributesToDough && !spec.isSourdough) {
+    } else if (spec.isPreferment) {
         prefermentHours = prefermentPeakHours;
     }
 
@@ -311,20 +324,38 @@ export const formatDuration = (hours) => {
 
 // Build a simple step-by-step method for the current dough, weaving in the
 // estimated bulk/proof times.
-export const buildMethod = ({ leaveningType, timing, temperature, units, unitLabel, prefermentPeakHours = 0 }) => {
+export const buildMethod = ({
+    leaveningType,
+    timing,
+    temperature,
+    units,
+    unitLabel,
+    prefermentPeakHours = 0,
+    yeastPlan = null,
+}) => {
     const leavening = leaveningType.toLowerCase();
     const spec = LEAVENINGS[leaveningType] || {};
     const steps = [];
 
-    if (spec.contributesToDough && !spec.isSourdough && prefermentPeakHours > 0) {
+    if (spec.isPreferment && prefermentPeakHours > 0 && yeastPlan) {
         steps.push(
-            `Mix the ${leavening} (${leaveningType.toLowerCase()}) and ferment about ${formatDuration(prefermentPeakHours)} at ${Number(temperature)}°C before making the dough.`
+            `Mix the ${leavening} with ${yeastPlan.prefermentYeastGrams} g instant yeast (${yeastPlan.prefermentYeastPercent}% of preferment flour). Ferment about ${formatDuration(prefermentPeakHours)} at ${Number(temperature)}°C.`
+        );
+    }
+
+    if (spec.isPreferment && yeastPlan) {
+        steps.push(
+            `Combine the ripe ${leavening} with the remaining flour and water until no dry flour remains, then rest 20 min (autolyse).`,
+            `Add the salt and ${yeastPlan.finalYeastGrams} g instant yeast; mix or knead until the dough is smooth.`
+        );
+    } else {
+        steps.push(
+            'Mix the flour and water until no dry flour remains, then rest 20 min (autolyse).',
+            `Add the salt and ${leavening}; mix or knead until the dough is smooth.`
         );
     }
 
     steps.push(
-        'Mix the flour and water until no dry flour remains, then rest 20 min (autolyse).',
-        `Add the salt and ${leavening}; mix or knead until the dough is smooth.`,
         `Bulk ferment about ${formatDuration(timing.bulkHours)} at ${Number(temperature)}°C, with a few stretch-and-folds in the first hour.`,
         `Divide and shape into ${Number(units)} ${unitLabel}.`,
         `Proof about ${formatDuration(timing.proofHours)}, until visibly puffy.`,
@@ -387,6 +418,44 @@ export const computeRecipe = ({ totalWeight, hydration, salt, leavening, leaveni
         totalWater: round(totalWater),
         trueHydration: round(trueHydration, 1),
         contributesToDough: !!spec.contributesToDough,
+        isPreferment: !!spec.isPreferment,
+    };
+};
+
+// Poolish and biga need yeast in the preferment and again in the final dough.
+// The preferment gets a tiny dose to kick off fermentation; the final dough
+// gets instant yeast on the remaining flour (minus what went into the
+// preferment), sized for the target bulk rise at the current temperature.
+export const computeYeastPlan = ({
+    recipe,
+    leaveningType,
+    temperature = REFERENCE_TEMP_C,
+}) => {
+    const spec = LEAVENINGS[leaveningType] || {};
+    if (!spec.isPreferment) {
+        return null;
+    }
+
+    const prefermentFlour = Number(recipe.starterFlour);
+    const remainingFlour = Number(recipe.flour);
+    const prefermentYeastPercent = spec.prefermentYeastPercent ?? 0;
+    const prefermentYeastGrams = (prefermentFlour * prefermentYeastPercent) / 100;
+
+    const temp = Number(temperature);
+    const tempFactor = 2 ** ((REFERENCE_TEMP_C - temp) / 10);
+    const targetBulkHours = spec.targetBulkHours ?? 3;
+    const totalFinalYeastPercent = (REFERENCE_YEAST_BULK_HOURS / targetBulkHours) * tempFactor;
+    const totalFinalYeastGrams = (remainingFlour * totalFinalYeastPercent) / 100;
+    const finalYeastGrams = Math.max(0, totalFinalYeastGrams - prefermentYeastGrams);
+    const finalYeastPercent =
+        remainingFlour > 0 ? (finalYeastGrams / remainingFlour) * 100 : 0;
+
+    return {
+        prefermentYeastGrams: round(prefermentYeastGrams, 2),
+        prefermentYeastPercent,
+        finalYeastGrams: round(finalYeastGrams, 2),
+        finalYeastPercent: round(finalYeastPercent, 2),
+        totalYeastGrams: round(prefermentYeastGrams + finalYeastGrams, 2),
     };
 };
 
@@ -685,6 +754,11 @@ const BreadCalculator = () => {
         [totalWeight, hydration, salt, leavening, leaveningType]
     );
 
+    const yeastPlan = useMemo(
+        () => computeYeastPlan({ recipe, leaveningType, temperature }),
+        [recipe, leaveningType, temperature]
+    );
+
     const timing = useMemo(
         () => computeTiming({ leaveningType, leavening, temperature }),
         [leaveningType, leavening, temperature]
@@ -704,11 +778,13 @@ const BreadCalculator = () => {
                 units,
                 unitLabel: preset.unitLabel,
                 prefermentPeakHours,
+                yeastPlan,
             }),
-        [leaveningType, timing, temperature, units, preset.unitLabel, prefermentPeakHours]
+        [leaveningType, timing, temperature, units, preset.unitLabel, prefermentPeakHours, yeastPlan]
     );
 
     const isSourdough = !!LEAVENINGS[leaveningType]?.isSourdough;
+    const isPreferment = !!LEAVENINGS[leaveningType]?.isPreferment;
     const starterHydration = LEAVENINGS[leaveningType]?.starterHydration ?? 100;
     const starterPlan = useMemo(() => {
         if (!isSourdough) {
@@ -888,9 +964,30 @@ const BreadCalculator = () => {
                         <RecipeRow ingredient="Water" percent={`${round(hydration, 1)}%`} grams={`${recipe.water} g`} />
                         <RecipeRow ingredient="Salt" percent={`${round(salt, 1)}%`} grams={`${recipe.salt} g`} />
                         <RecipeRow ingredient={leaveningType} percent={`${round(leavening, 1)}%`} grams={`${recipe.leavening} g`} />
+                        {yeastPlan ? (
+                            <>
+                                <RecipeRow
+                                    ingredient={`Yeast (in ${leaveningType.toLowerCase()})`}
+                                    percent={`${yeastPlan.prefermentYeastPercent}% pref. flour`}
+                                    grams={`${yeastPlan.prefermentYeastGrams} g`}
+                                />
+                                <RecipeRow
+                                    ingredient="Yeast (final dough)"
+                                    percent={`${yeastPlan.finalYeastPercent}%`}
+                                    grams={`${yeastPlan.finalYeastGrams} g`}
+                                />
+                            </>
+                        ) : null}
                         <RecipeRow ingredient="Total dough" percent="—" grams={`${recipe.total} g`} isTotal />
 
-                        {recipe.contributesToDough ? (
+                        {isPreferment ? (
+                            <Text style={styles.note}>
+                                {leaveningType} is flour + water with a pinch of yeast in the preferment, plus more instant yeast in the final mix.
+                                It adds ~{recipe.starterFlour} g flour and {recipe.starterWater} g water. True hydration incl. preferment:{' '}
+                                <Text style={styles.noteStrong}>{recipe.trueHydration}%</Text>{' '}
+                                ({recipe.totalWater} g water / {recipe.totalFlour} g flour).
+                            </Text>
+                        ) : recipe.contributesToDough ? (
                             <Text style={styles.note}>
                                 {isSourdough ? 'Starter' : leaveningType} is flour + water, so it adds ~{recipe.starterFlour} g flour and{' '}
                                 {recipe.starterWater} g water. True hydration incl. preferment:{' '}

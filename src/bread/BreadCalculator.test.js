@@ -8,6 +8,7 @@ import BreadCalculator, {
   computeStarterPlan,
   computeLevainPeakHours,
   computeTiming,
+  computeYeastPlan,
   clampLeavening,
   clampSliderValue,
   formatDateTime,
@@ -66,14 +67,26 @@ describe('computeRecipe (baker\'s percentages)', () => {
     expect(recipe.trueHydration).toBeLessThan(100);
   });
 
-  test('poolish and biga contribute flour and water like sourdough starter', () => {
+  test('poolish and biga contribute flour and water and need yeast in both stages', () => {
     const poolish = computeRecipe({ totalWeight: 1000, hydration: 70, salt: 2, leavening: 20, leaveningType: 'Poolish' });
     expect(poolish.contributesToDough).toBe(true);
+    expect(poolish.isPreferment).toBe(true);
     expect(poolish.starterFlour).toBe(poolish.starterWater);
+
+    const poolishYeast = computeYeastPlan({ recipe: poolish, leaveningType: 'Poolish', temperature: 24 });
+    expect(poolishYeast.prefermentYeastPercent).toBe(0.1);
+    expect(poolishYeast.prefermentYeastGrams).toBeGreaterThan(0);
+    expect(poolishYeast.finalYeastGrams).toBeGreaterThan(0);
 
     const biga = computeRecipe({ totalWeight: 1000, hydration: 70, salt: 2, leavening: 30, leaveningType: 'Biga' });
     expect(biga.contributesToDough).toBe(true);
+    expect(biga.isPreferment).toBe(true);
     expect(biga.starterWater).toBeLessThan(biga.starterFlour);
+
+    const bigaYeast = computeYeastPlan({ recipe: biga, leaveningType: 'Biga', temperature: 24 });
+    expect(bigaYeast.prefermentYeastPercent).toBe(0.3);
+    expect(bigaYeast.prefermentYeastGrams).toBeGreaterThan(0);
+    expect(bigaYeast.finalYeastGrams).toBeGreaterThan(0);
   });
 
   test('cake yeast default dose is ~3x instant yeast', () => {
@@ -200,6 +213,13 @@ describe('computeTiming (fermentation time)', () => {
     const less = computeTiming({ leaveningType: 'Sourdough Starter', leavening: 10, temperature: 24 });
     const more = computeTiming({ leaveningType: 'Sourdough Starter', leavening: 20, temperature: 24 });
     expect(more.bulkHours).toBeLessThan(less.bulkHours);
+  });
+
+  test('poolish bulk timing follows final-dough yeast, not preferment size', () => {
+    const small = computeTiming({ leaveningType: 'Poolish', leavening: 10, temperature: 24 });
+    const large = computeTiming({ leaveningType: 'Poolish', leavening: 40, temperature: 24 });
+    expect(small.bulkHours).toBe(large.bulkHours);
+    expect(small.bulkHours).toBe(3);
   });
 });
 
