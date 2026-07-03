@@ -16,6 +16,7 @@ import BreadCalculator, {
   getLeaveningSliderRange,
   getDynamicSliderRange,
   getPercentAbsoluteRange,
+  getStarterPlanError,
   HYDRATION_SLIDER,
   SALT_SLIDER,
   SALT_ABSOLUTE,
@@ -191,6 +192,37 @@ describe('computeStarterPlan', () => {
     expect(plan.doughStarter.useFromDiscard).toBe(0);
     expect(plan.doughStarter.targetTotal).toBe(250);
     expect(plan.doughStarter.peakHours).toBeGreaterThan(0);
+    expect(plan.seedUsedForDough).toBe(25);
+    expect(plan.motherFeed).toBeNull();
+  });
+
+  test('uses remaining seed for jar refresh after taking some for dough', () => {
+    const plan = computeStarterPlan({
+      jarWeight: 200,
+      seedKept: 25,
+      targetTotal: 200,
+      doughStarterNeed: 180,
+      discardOnHand: 175,
+      temperature: 24,
+    });
+    expect(plan.doughStarter.strategy).toBe('partial');
+    expect(plan.doughStarter.useFromSeed).toBe(5);
+    expect(plan.seedForMother).toBe(20);
+    expect(plan.motherFeed.seedWeight).toBe(20);
+  });
+});
+
+describe('getStarterPlanError', () => {
+  test('returns helpful messages for invalid jar inputs', () => {
+    expect(getStarterPlanError({ jarWeight: 0, seedKept: 25, targetTotal: 200, discardOnHand: 0 })).toMatch(
+      /jar weight/i
+    );
+    expect(getStarterPlanError({ jarWeight: 20, seedKept: 30, targetTotal: 200, discardOnHand: 0 })).toMatch(
+      /at least/i
+    );
+    expect(getStarterPlanError({ jarWeight: 200, seedKept: 25, targetTotal: 20, discardOnHand: 175 })).toMatch(
+      /feed target/i
+    );
   });
 });
 
@@ -281,6 +313,32 @@ describe('computeBakeSchedule', () => {
     expect(schedule.prefermentStart.getTime()).toBe(
       subtractHours(schedule.mixStart, prefermentPeakHours).getTime()
     );
+  });
+
+  test('includes jar refresh for sourdough discard bakes', () => {
+    const recipe = computeRecipe({
+      totalWeight: 900,
+      hydration: 72,
+      salt: 2,
+      leavening: 20,
+      leaveningType: 'Sourdough Starter',
+    });
+    const starterPlan = computeStarterPlan({
+      jarWeight: 200,
+      seedKept: 25,
+      targetTotal: 200,
+      doughStarterNeed: recipe.leavening,
+      discardOnHand: 175,
+      temperature: 24,
+    });
+    const timing = computeTiming({ leaveningType: 'Sourdough Starter', leavening: 20, temperature: 24 });
+    const schedule = computeBakeSchedule({
+      targetBakeTime: new Date(2026, 6, 7, 8, 0, 0),
+      timing,
+      leaveningType: 'Sourdough Starter',
+      starterPlan,
+    });
+    expect(schedule.steps.some((step) => step.label === 'Feed starter jar')).toBe(true);
   });
 });
 
@@ -391,6 +449,7 @@ describe('BreadCalculator', () => {
     expect(screen.getAllByText('Sourdough Starter').length).toBeGreaterThan(0);
     expect(screen.getByText('Feed & bake')).toBeTruthy();
     expect(screen.getByText('Discard on hand')).toBeTruthy();
+    expect(screen.getByText(/Use jar discard/)).toBeTruthy();
     expect(screen.getByText('Starter for this dough')).toBeTruthy();
   });
 
