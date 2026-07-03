@@ -864,28 +864,34 @@ const SliderField = ({ label, suffix, value, range, clampRange, onChange, gramsL
         return Math.round(bound * factor) / factor;
     };
 
+    const displayValue = formatBound(Number(value));
+
     return (
         <View style={styles.field}>
             <View style={styles.sliderHeader}>
                 <Text style={styles.fieldLabel}>{label}</Text>
-                <View style={styles.sliderInputRow}>
-                    <View style={[styles.fieldInput, styles.sliderValueInput]}>
-                        <TextInput
-                            style={styles.sliderTextInput}
-                            keyboardType="decimal-pad"
-                            inputMode="decimal"
-                            value={draft}
-                            onFocus={() => {
-                                isEditing.current = true;
-                            }}
-                            onBlur={commitDraft}
-                            onSubmitEditing={commitDraft}
-                            onChangeText={setDraft}
-                        />
-                        {suffix ? <Text style={styles.fieldSuffix}>{suffix}</Text> : null}
-                    </View>
-                    {gramsLabel ? <Text style={styles.sliderGrams}>({gramsLabel})</Text> : null}
+                <Text style={styles.sliderCurrentBadge}>
+                    {displayValue}
+                    {suffix}
+                </Text>
+            </View>
+            <View style={styles.sliderInputRow}>
+                <View style={[styles.fieldInput, styles.sliderValueInputFull]}>
+                    <TextInput
+                        style={styles.sliderTextInput}
+                        keyboardType="decimal-pad"
+                        inputMode="decimal"
+                        value={draft}
+                        onFocus={() => {
+                            isEditing.current = true;
+                        }}
+                        onBlur={commitDraft}
+                        onSubmitEditing={commitDraft}
+                        onChangeText={setDraft}
+                    />
+                    {suffix ? <Text style={styles.fieldSuffix}>{suffix}</Text> : null}
                 </View>
+                {gramsLabel ? <Text style={styles.sliderGrams}>({gramsLabel})</Text> : null}
             </View>
             <Slider
                 style={styles.slider}
@@ -905,6 +911,10 @@ const SliderField = ({ label, suffix, value, range, clampRange, onChange, gramsL
             />
             <View style={styles.sliderBounds}>
                 <Text style={styles.sliderBound}>{formatBound(min)}{suffix}</Text>
+                <Text style={styles.sliderCurrentBound}>
+                    {displayValue}
+                    {suffix}
+                </Text>
                 <Text style={styles.sliderBound}>{formatBound(max)}{suffix}</Text>
             </View>
         </View>
@@ -1699,19 +1709,29 @@ const styles = StyleSheet.create({
     sliderHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 4,
+        alignItems: 'center',
+        marginBottom: 6,
         gap: 12,
+    },
+    sliderCurrentBadge: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#7a3e12',
+        fontVariant: ['tabular-nums'],
     },
     sliderInputRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        flexShrink: 0,
+        marginBottom: 4,
     },
     sliderValueInput: {
         width: 96,
         flex: 0,
+    },
+    sliderValueInputFull: {
+        flex: 1,
+        maxWidth: 160,
     },
     sliderTextInput: {
         flex: 1,
@@ -1741,11 +1761,21 @@ const styles = StyleSheet.create({
     sliderBounds: {
         flexDirection: 'row',
         justifyContent: 'space-between',
+        alignItems: 'center',
         marginTop: -2,
     },
     sliderBound: {
         fontSize: 12,
         color: '#a08b74',
+        flex: 1,
+    },
+    sliderCurrentBound: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#7a3e12',
+        fontVariant: ['tabular-nums'],
+        textAlign: 'center',
+        flex: 1,
     },
     scheduleSection: {
         marginTop: 8,
