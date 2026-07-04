@@ -2,7 +2,7 @@
 
 ## Cursor Cloud specific instructions
 
-This is a single product: **Hydration Bread Calculator**, an **Expo (React Native)** app that targets iOS / Android / web from one codebase, using baker's percentages. The **web** build is deployed to **Firebase Hosting**. There is no backend, database, or auth. Standard scripts (`start`, `web`, `test`, `lint`, `export:web`, `deploy`) live in `package.json` and are documented in `README.md`.
+This is a single product: **Hydration Bread Calculator**, an **Expo (React Native)** app that targets iOS / Android / web from one codebase, using baker's percentages. The **web** build is deployed to **Firebase Hosting** at **https://pizza.nash.engineering**. There is no backend, database, or auth. Standard scripts (`start`, `web`, `test`, `lint`, `export:web`, `deploy`) live in `package.json` and are documented in `README.md`.
 
 Stack: Expo SDK 57, React Native 0.86, React 19, `react-native-web`, Jest (`jest-expo`) + `@testing-library/react-native`, ESLint (`eslint-config-expo`).
 

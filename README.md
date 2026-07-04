@@ -6,7 +6,7 @@ is always 100%, and every other ingredient (water/hydration, salt, yeast or
 starter) is expressed as a percentage of the flour weight. Pizza dough is just
 one style preset of the same model.
 
-The web build is deployed to **Firebase Hosting**.
+The web build is deployed to **Firebase Hosting** at **[pizza.nash.engineering](https://pizza.nash.engineering)**.
 
 ## Tech stack
 
