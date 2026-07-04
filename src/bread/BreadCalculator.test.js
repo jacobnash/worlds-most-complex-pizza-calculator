@@ -451,6 +451,9 @@ describe('BreadCalculator', () => {
     expect(screen.getByText('Discard on hand')).toBeTruthy();
     expect(screen.getByText(/Use jar discard/)).toBeTruthy();
     expect(screen.getByText('Starter for this dough')).toBeTruthy();
+    expect(screen.getByDisplayValue('72')).toBeTruthy();
+    expect(screen.getByDisplayValue('24')).toBeTruthy();
+    expect(screen.getByDisplayValue('20')).toBeTruthy();
   });
 
   test('shows the method steps and timing', () => {

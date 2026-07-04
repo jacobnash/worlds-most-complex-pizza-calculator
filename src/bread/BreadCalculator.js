@@ -780,26 +780,19 @@ const NumberField = ({ label, suffix, value, onChange, onBlurCommit }) => (
 );
 
 const GramField = ({ label, suffix = 'g', value, onChange, min = 0, max = 10000 }) => {
-    const [draft, setDraft] = useState(String(value));
-    const isEditing = useRef(false);
-
-    useEffect(() => {
-        if (!isEditing.current) {
-            setDraft(String(value));
-        }
-    }, [value]);
+    const [isFocused, setIsFocused] = useState(false);
+    const [draft, setDraft] = useState('');
+    const displayValue = String(Math.round(Number(value)));
 
     const commit = () => {
-        isEditing.current = false;
+        setIsFocused(false);
         const numeric = Number(draft);
         if (!Number.isFinite(numeric)) {
             onChange(min);
-            setDraft(String(min));
             return;
         }
         const clamped = Math.min(max, Math.max(min, Math.round(numeric)));
         onChange(clamped);
-        setDraft(String(clamped));
     };
 
     return (
@@ -810,13 +803,15 @@ const GramField = ({ label, suffix = 'g', value, onChange, min = 0, max = 10000 
                     style={styles.textInput}
                     keyboardType="numeric"
                     inputMode="numeric"
-                    value={draft}
+                    value={isFocused ? draft : displayValue}
                     onFocus={() => {
-                        isEditing.current = true;
+                        setDraft(displayValue);
+                        setIsFocused(true);
                     }}
                     onBlur={commit}
                     onSubmitEditing={commit}
                     onChangeText={setDraft}
+                    selectTextOnFocus
                 />
                 <Text style={styles.fieldSuffix}>{suffix}</Text>
             </View>
@@ -842,21 +837,8 @@ const TextField = ({ label, value, onChange, placeholder, ...inputProps }) => (
 const SliderField = ({ label, suffix, value, range, clampRange, onChange, gramsLabel }) => {
     const { min, max, step } = range;
     const limits = clampRange ?? range;
-    const [draft, setDraft] = useState(String(value));
-    const isEditing = useRef(false);
-
-    useEffect(() => {
-        if (!isEditing.current) {
-            setDraft(String(value));
-        }
-    }, [value]);
-
-    const commitDraft = () => {
-        isEditing.current = false;
-        const clamped = clampSliderValue(draft, limits);
-        onChange(clamped);
-        setDraft(String(clamped));
-    };
+    const [isFocused, setIsFocused] = useState(false);
+    const [draft, setDraft] = useState('');
 
     const formatBound = (bound) => {
         const decimals = step < 1 ? 1 : 0;
@@ -865,6 +847,13 @@ const SliderField = ({ label, suffix, value, range, clampRange, onChange, gramsL
     };
 
     const displayValue = formatBound(Number(value));
+    const inputValue = isFocused ? draft : String(displayValue);
+
+    const commitDraft = () => {
+        setIsFocused(false);
+        const clamped = clampSliderValue(draft, limits);
+        onChange(clamped);
+    };
 
     return (
         <View style={styles.field}>
@@ -881,13 +870,15 @@ const SliderField = ({ label, suffix, value, range, clampRange, onChange, gramsL
                         style={styles.sliderTextInput}
                         keyboardType="decimal-pad"
                         inputMode="decimal"
-                        value={draft}
+                        value={inputValue}
                         onFocus={() => {
-                            isEditing.current = true;
+                            setDraft(String(displayValue));
+                            setIsFocused(true);
                         }}
                         onBlur={commitDraft}
                         onSubmitEditing={commitDraft}
                         onChangeText={setDraft}
+                        selectTextOnFocus
                     />
                     {suffix ? <Text style={styles.fieldSuffix}>{suffix}</Text> : null}
                 </View>
@@ -900,10 +891,8 @@ const SliderField = ({ label, suffix, value, range, clampRange, onChange, gramsL
                 step={step}
                 value={Number(value)}
                 onValueChange={(next) => {
-                    isEditing.current = false;
-                    const clamped = clampSliderValue(next, limits);
-                    onChange(clamped);
-                    setDraft(String(clamped));
+                    setIsFocused(false);
+                    onChange(clampSliderValue(next, limits));
                 }}
                 minimumTrackTintColor="#7a3e12"
                 maximumTrackTintColor="#e2d3c0"
@@ -1735,12 +1724,12 @@ const styles = StyleSheet.create({
     },
     sliderTextInput: {
         flex: 1,
-        paddingVertical: 8,
-        paddingHorizontal: 10,
+        minWidth: 56,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
         fontSize: 16,
-        fontWeight: '700',
-        color: '#7a3e12',
-        fontVariant: ['tabular-nums'],
+        fontWeight: '600',
+        color: '#2b2118',
         textAlign: 'right',
     },
     sliderValue: {
